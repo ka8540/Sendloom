@@ -15,9 +15,12 @@ export type BrightResponseBodyClassification =
   | "UNKNOWN";
 
 type BrightTransientBodyReason = "HTML_BODY" | "EMPTY_BODY" | "INVALID_JSON" | "NON_JSON_BODY";
-type BrightRetryReason = BrightTransientBodyReason | "TIMEOUT";
+type BrightRetryReason = BrightTransientBodyReason | "ORGANIC_ARRAY_MISSING" | "TIMEOUT";
 
-export const MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE = 2;
+export const MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE = 3;
+// Discover gives one provider action 120s (inside a 180s GraphQL request); keep
+// the final 30s available for durable cleanup and the existing Apify fallback.
+export const BRIGHT_RETRY_FALLBACK_RESERVE_MS = 30_000;
 const MIN_BRIGHT_RETRY_REMAINING_BUDGET_MS = 5_000;
 
 export class BrightDataSearchError extends Error {
@@ -200,6 +203,50 @@ function organicRows(payload: unknown): unknown[] | null {
   return null;
 }
 
+function hasExplicitProviderTerminalSignal(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as Record<string, unknown>;
+  if (record.error !== undefined && record.error !== null && record.error !== false && record.error !== "") {
+    return true;
+  }
+  const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : null;
+  if (status && [
+    "error",
+    "failed",
+    "failure",
+    "cancelled",
+    "canceled",
+    "unauthorized",
+    "forbidden",
+    "complete",
+    "completed",
+    "done",
+    "no_results",
+    "no results"
+  ].includes(status)) {
+    return true;
+  }
+  if (record.result && typeof record.result === "object") {
+    return hasExplicitProviderTerminalSignal(record.result);
+  }
+  if (typeof record.body === "string") {
+    try {
+      return hasExplicitProviderTerminalSignal(JSON.parse(record.body));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function brightAttemptTimeoutMs(configuredTimeoutMs: number, deadlineAtMs?: number): number | null {
+  if (typeof deadlineAtMs !== "number") return configuredTimeoutMs;
+  const usableMs = Math.floor(deadlineAtMs - Date.now() - BRIGHT_RETRY_FALLBACK_RESERVE_MS);
+  const meaningfulMinimumMs = Math.min(configuredTimeoutMs, MIN_BRIGHT_RETRY_REMAINING_BUDGET_MS);
+  if (usableMs < meaningfulMinimumMs) return null;
+  return Math.max(1, Math.min(configuredTimeoutMs, usableMs));
+}
+
 const SHAPE_KEY_ALLOWLIST = new Set([
   "organic",
   "result",
@@ -365,10 +412,6 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       start: String((options.page - 1) * PAGE_SIZE)
     }).toString();
     const configuredTimeoutMs = this.options.timeoutMs ?? env.DISCOVER_BRIGHTDATA_TIMEOUT_MS;
-    const retryBudgetAvailable = () =>
-      !options.signal?.aborted &&
-      (typeof options.deadlineAtMs !== "number" ||
-        options.deadlineAtMs - Date.now() > MIN_BRIGHT_RETRY_REMAINING_BUDGET_MS);
 
     try {
       const requestInit: Omit<RequestInit, "signal"> = {
@@ -386,7 +429,11 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
 
       for (let attempt = 1; attempt <= MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE; attempt += 1) {
         if (options.signal?.aborted) options.signal.throwIfAborted();
-        const attemptTimeout = AbortSignal.timeout(configuredTimeoutMs);
+        const effectiveTimeoutMs = brightAttemptTimeoutMs(configuredTimeoutMs, options.deadlineAtMs);
+        if (effectiveTimeoutMs === null) {
+          throw new BrightDataSearchError("TIMEOUT", { stage: "TIMEOUT" });
+        }
+        const attemptTimeout = AbortSignal.timeout(effectiveTimeoutMs);
         const requestSignal = options.signal
           ? AbortSignal.any([attemptTimeout, options.signal])
           : attemptTimeout;
@@ -408,7 +455,11 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
           if (options.signal?.aborted) options.signal.throwIfAborted();
           const classification = classifyBrightResponseBody(bodyText, response.headers.get("content-type"));
           if (classification !== "JSON") {
-            if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE && retryBudgetAvailable()) {
+            if (
+              attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE &&
+              !options.signal?.aborted &&
+              brightAttemptTimeoutMs(configuredTimeoutMs, options.deadlineAtMs) !== null
+            ) {
               logRequestRetry({
                 status: response.status,
                 page: options.page,
@@ -432,6 +483,20 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
               stage: "ORGANIC_ARRAY_MISSING",
               ...describeBrightResponseShape(payload)
             }));
+            if (
+              !hasExplicitProviderTerminalSignal(payload) &&
+              attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE &&
+              !options.signal?.aborted &&
+              brightAttemptTimeoutMs(configuredTimeoutMs, options.deadlineAtMs) !== null
+            ) {
+              logRequestRetry({
+                status: response.status,
+                page: options.page,
+                attempt,
+                reason: "ORGANIC_ARRAY_MISSING"
+              });
+              continue;
+            }
             throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
           }
           const results = mapRows(rows);
@@ -448,7 +513,11 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
           if (!attemptTimedOut) throw error;
 
           const timeoutError = new BrightDataSearchError("TIMEOUT", { stage: "TIMEOUT" });
-          if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE && retryBudgetAvailable()) {
+          if (
+            attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE &&
+            !options.signal?.aborted &&
+            brightAttemptTimeoutMs(configuredTimeoutMs, options.deadlineAtMs) !== null
+          ) {
             logRequestRetry({
               status: null,
               page: options.page,

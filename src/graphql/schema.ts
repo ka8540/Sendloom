@@ -194,6 +194,9 @@ export const typeDefs = /* GraphQL */ `
     # Lets the grouped company detail target "Add 10 more" at the child search
     # that owns the active role tab.
     positionCategories: [PositionCategory!]!
+    # Latest durable Add More request for this search. Safe counters/status only;
+    # provider payloads and internal errors are never exposed.
+    latestExpansion: DiscoverSearchExpansion
     createdAt: DateTime!
     completedAt: DateTime
   }
@@ -245,6 +248,8 @@ export const typeDefs = /* GraphQL */ `
     quotaRemaining: Int!
     exhausted: Boolean!
     message: String
+    createdAt: DateTime!
+    updatedAt: DateTime!
   }
 
   type PageInfo {

@@ -18,8 +18,8 @@ import {
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
-import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { buildActivityItems } from "@/components/dashboard/activity-builder";
+import { DiscoverLiveRefresh } from "@/components/dashboard/discover-live-refresh";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/overview-send-window";
 import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
@@ -600,7 +600,9 @@ export default async function OverviewCommandCenter() {
     recentDiscoverExpansionRows,
     recentDomainSearchSummaries,
     recentActivityAuditRows,
-    recentDeliveryFailureRows
+    recentDeliveryFailureRows,
+    activeDiscoverExpansionCount,
+    activeProspectSearchCount
   ] =
     await Promise.all([
       prisma.prospectSearch
@@ -657,8 +659,22 @@ export default async function OverviewCommandCenter() {
           orderBy: { updatedAt: "desc" },
           select: { id: true, updatedAt: true }
         })
-        .catch(() => [])
+        .catch(() => []),
+      prisma.discoverSearchExpansion
+        .count({ where: { userId: user.id, status: { in: ["PENDING", "PROCESSING"] } } })
+        .catch(() => 0),
+      prisma.prospectSearch
+        .count({
+          where: {
+            userId: user.id,
+            status: { in: ["RESOLVING_COMPANY", "SEARCHING_PEOPLE", "CLASSIFYING_POSITIONS", "INFERRING_EMAIL_PATTERN"] }
+          }
+        })
+        .catch(() => 0)
     ]);
+
+  // The counts are whole-account, so they already cover every recent row.
+  const hasActiveDiscoverWork = activeProspectSearchCount > 0 || activeDiscoverExpansionCount > 0;
 
   const activityItems = buildActivityItems({
     recentRuns,
@@ -866,7 +882,7 @@ export default async function OverviewCommandCenter() {
 
         <aside className={styles.sideColumn}>
           <SendWindowCard combined={userSendWindow} senders={sendWindowSenders} />
-          <ActivityFeed items={activityItems} />
+          <DiscoverLiveRefresh active={hasActiveDiscoverWork} items={activityItems} />
         </aside>
       </div>
 

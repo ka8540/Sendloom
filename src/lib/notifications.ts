@@ -18,7 +18,12 @@ import {
 
 type NotificationDatabase = Pick<
   PrismaClient,
-  "appNotification" | "prospectSearch" | "prospectSearchPerson" | "campaignRun" | "senderProfile"
+  | "appNotification"
+  | "prospectSearch"
+  | "prospectSearchPerson"
+  | "discoverSearchExpansion"
+  | "campaignRun"
+  | "senderProfile"
 >;
 
 type NotificationWriteInput = {
@@ -209,7 +214,60 @@ export async function createDiscoverSearchCompletedNotification(
       dedupeKey: `discover-search-completed:${search.id}`,
       metadata: {
         searchId: search.id,
-        resultCount
+        resultCount,
+        company
+      }
+    },
+    db
+  );
+}
+
+/**
+ * Create the one user-facing notification for a successful Add More run.
+ * The durable expansion id is the dedupe identity, so a retried background
+ * callback can never create a second notification. Zero-result expansions are
+ * intentionally silent and keep the existing in-page "no more people" UX.
+ */
+export async function createDiscoverExpansionCompletedNotification(
+  expansionId: string,
+  db: NotificationDatabase = prisma
+): Promise<AppNotification | null> {
+  const expansion = await db.discoverSearchExpansion.findUnique({
+    where: { id: expansionId },
+    select: {
+      id: true,
+      userId: true,
+      searchId: true,
+      status: true,
+      addedCount: true,
+      search: { select: { requestedCompany: true } }
+    }
+  });
+
+  if (!expansion || expansion.status !== "READY" || expansion.addedCount <= 0) {
+    return null;
+  }
+
+  const company = boundedPlainText(expansion.search.requestedCompany, 100) || "your company search";
+  const peopleLabel = expansion.addedCount === 1 ? "person was" : "people were";
+
+  return createNotificationOnce(
+    {
+      userId: expansion.userId,
+      type: AppNotificationType.DISCOVER_SEARCH_COMPLETED,
+      severity: AppNotificationSeverity.SUCCESS,
+      title: "More people are ready",
+      message: `${expansion.addedCount} new ${peopleLabel} added to ${company}.`,
+      href: discoverNotificationHref(expansion.searchId),
+      entityType: "DiscoverSearchExpansion",
+      entityId: expansion.id,
+      dedupeKey: `discover-expansion-completed:${expansion.id}`,
+      metadata: {
+        kind: "DISCOVER_EXPANSION_COMPLETED",
+        expansionId: expansion.id,
+        searchId: expansion.searchId,
+        addedCount: expansion.addedCount,
+        company
       }
     },
     db

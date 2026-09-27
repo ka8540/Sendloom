@@ -4,6 +4,7 @@ import { ProspectPerson, personQueries } from "@/graphql/resolvers/person";
 import { prospectExportMutations } from "@/graphql/resolvers/prospect-export";
 import {
   DiscoverCompanyGroup,
+  DiscoverSearchExpansion,
   ProspectSearch,
   prospectSearchMutations,
   prospectSearchQueries
@@ -26,6 +27,7 @@ export const resolvers = {
   Company,
   CompanyPosition,
   DiscoverCompanyGroup,
+  DiscoverSearchExpansion,
   DiscoverSuggestion,
   ProspectPerson,
   ProspectSearch

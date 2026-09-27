@@ -6,7 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   DiscoverCompanyGroupNode,
+  DiscoverExpansionStatus,
   DiscoverQuota,
+  DiscoverSearchExpansion,
+  DiscoverSearchLiveState,
   PersonNode,
   ProspectSearchNode
 } from "@/components/prospects/prospect-graphql";
@@ -55,6 +58,10 @@ import {
   createEmptyProspectSelection,
   discoverPerSearchCopy,
   discoverPerSearchSentence,
+  deriveDiscoverSearchUiState,
+  discoverGroupStatusBadge,
+  discoverSearchStatusBadge,
+  discoverProcessingStageLabel,
   emailFormatEvidenceSummary,
   emailStatusBadge,
   clampPageIndex,
@@ -75,6 +82,7 @@ import {
   getProspectSelectionCount,
   isProspectSelected,
   isVerifiedStatus,
+  mergeDiscoverLiveStatesIntoGroups,
   personLocation,
   resolveHistoryPageAfterDelete,
   resolvePageCount,
@@ -158,6 +166,22 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
       peopleCount: 3
     },
     ...overrides
+  };
+}
+
+function expansion(status: DiscoverExpansionStatus): DiscoverSearchExpansion {
+  return {
+    id: "exp-1",
+    searchId: "s1",
+    status,
+    requestedCount: 10,
+    addedCount: status === "READY" ? 10 : 0,
+    totalPeopleCount: status === "READY" ? 13 : 3,
+    quotaRemaining: 3,
+    exhausted: false,
+    message: null,
+    createdAt: "2026-09-26T12:00:00.000Z",
+    updatedAt: "2026-09-26T12:00:01.000Z"
   };
 }
 
@@ -364,6 +388,164 @@ describe("status badges", () => {
     expect(badge.tone).toBe("muted");
     expect(badge.tone).not.toBe("verified");
     expect(badge.tone).not.toBe("blocked");
+  });
+});
+
+describe("shared Discover UI status derivation", () => {
+  it("keeps a normal ready search Ready", () => {
+    const node = search({ status: "READY", latestExpansion: null });
+    expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+      displayStatus: "READY",
+      isProcessing: false,
+      isExpansionActive: false
+    });
+    expect(discoverSearchStatusBadge(node).label).toBe("Ready");
+  });
+
+  it.each(["PENDING", "PROCESSING"] as const)(
+    "shows Processing for a ready search with a %s expansion",
+    (status) => {
+      const node = search({ status: "READY", latestExpansion: expansion(status) });
+      expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+        displayStatus: "PROCESSING",
+        isProcessing: true,
+        isExpansionActive: true
+      });
+      expect(discoverGroupStatusBadge([node]).label).toBe("Processing");
+    }
+  );
+
+  it("shows Processing for an active base search without an expansion", () => {
+    const node = search({ status: "SEARCHING_PEOPLE", latestExpansion: null });
+    expect(deriveDiscoverSearchUiState(node).displayStatus).toBe("PROCESSING");
+    expect(discoverGroupStatusBadge([node]).label).toBe("Processing");
+  });
+
+  it("lets a failed base search win over inconsistent active expansion data", () => {
+    const node = search({ status: "FAILED", latestExpansion: expansion("PROCESSING") });
+    expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+      displayStatus: "FAILED",
+      isProcessing: false,
+      isExpansionActive: false
+    });
+    expect(discoverGroupStatusBadge([node]).label).toBe("Failed");
+  });
+
+  it("returns the list row to Ready after the expansion becomes READY", () => {
+    const active = search({ status: "READY", latestExpansion: expansion("PROCESSING") });
+    const completed = search({ status: "READY", latestExpansion: expansion("READY") });
+    expect(discoverGroupStatusBadge([active]).label).toBe("Processing");
+    expect(discoverGroupStatusBadge([completed]).label).toBe("Ready");
+  });
+});
+
+describe("durable processing status card", () => {
+  const renderStatus = (status: ProspectSearchNode["status"], processing = false) => {
+    (globalThis as typeof globalThis & { React: typeof React }).React = React;
+    return renderToStaticMarkup(
+      React.createElement(StatusCard, {
+        search: search({ status, company: null, peopleCount: 0 }),
+        quota: null,
+        processing,
+        onProcess: vi.fn(),
+        onCancel: vi.fn()
+      })
+    );
+  };
+
+  it("shows Process search only for a real draft", () => {
+    const html = renderStatus("DRAFT");
+    expect(html).toContain("Process search");
+    expect(html).toContain("This search is still a draft");
+    expect(renderStatus("READY")).not.toContain("Process search");
+  });
+
+  it.each([
+    ["RESOLVING_COMPANY", "Resolving company…"],
+    ["SEARCHING_PEOPLE", "Finding people…"],
+    ["CLASSIFYING_POSITIONS", "Organizing roles…"],
+    ["INFERRING_EMAIL_PATTERN", "Preparing results…"]
+  ] as const)("renders %s as durable busy state", (status, label) => {
+    expect(discoverProcessingStageLabel(status)).toBe(label);
+    const html = renderStatus(status);
+    expect(html).toContain(label);
+    expect(html).toContain("disabled");
+    expect(html).not.toContain("This search is still a draft");
+    expect(html).not.toContain(">Process search<");
+  });
+
+  it("uses server processing after the temporary click flag clears", () => {
+    const html = renderStatus("RESOLVING_COMPANY", false);
+    expect(html).toContain("Resolving company…");
+    expect(html).not.toContain("This search is still a draft");
+  });
+});
+
+describe("lightweight Search History live-state merge", () => {
+  it("updates only the matching row while preserving the group array's other state", () => {
+    const groups: DiscoverCompanyGroupNode[] = [{
+      id: "group-1",
+      displayName: "AT&T",
+      requestedRoles: ["Software Engineer"],
+      locations: ["United States"],
+      peopleCount: 0,
+      latestActivityAt: "2026-09-26T00:00:00.000Z",
+      company: null,
+      searches: [{
+        id: "search-1",
+        requestedTitles: ["Software Engineer"],
+        requestedLocations: ["United States"],
+        status: "SEARCHING_PEOPLE",
+        peopleCount: 0,
+        createdAt: "2026-09-26T00:00:00.000Z",
+        completedAt: null
+      }]
+    }];
+    const live: DiscoverSearchLiveState = {
+      id: "search-1",
+      status: "READY",
+      peopleCount: 10,
+      latestExpansion: null
+    };
+    const merged = mergeDiscoverLiveStatesIntoGroups(groups, [live]);
+    expect(merged[0]).toMatchObject({
+      peopleCount: 10,
+      searches: [{ status: "READY", peopleCount: 10, latestExpansion: null }]
+    });
+    expect(merged[0].displayName).toBe(groups[0].displayName);
+  });
+
+  it("moves a ready row from Processing back to Ready when Add More completes", () => {
+    const groups: DiscoverCompanyGroupNode[] = [{
+      id: "group-1",
+      displayName: "AT&T",
+      requestedRoles: ["Software Engineer"],
+      locations: ["United States"],
+      peopleCount: 10,
+      latestActivityAt: "2026-09-26T00:00:00.000Z",
+      company: null,
+      searches: [{
+        id: "search-1",
+        requestedTitles: ["Software Engineer"],
+        requestedLocations: ["United States"],
+        status: "READY",
+        peopleCount: 10,
+        createdAt: "2026-09-26T00:00:00.000Z",
+        completedAt: "2026-09-26T00:01:00.000Z",
+        latestExpansion: expansion("PROCESSING")
+      }]
+    }];
+    const live: DiscoverSearchLiveState = {
+      id: "search-1",
+      status: "READY",
+      peopleCount: 20,
+      latestExpansion: expansion("READY")
+    };
+
+    expect(discoverGroupStatusBadge(groups[0].searches).label).toBe("Processing");
+    const merged = mergeDiscoverLiveStatesIntoGroups(groups, [live]);
+    expect(discoverGroupStatusBadge(merged[0].searches).label).toBe("Ready");
+    expect(merged[0].searches[0].latestExpansion?.status).toBe("READY");
   });
 });
 
@@ -813,7 +995,7 @@ describe("Discover failed-state UI is safe and retryable", () => {
     expect(detailSource).toContain("Retrying search…");
     expect(detailSource).toContain("Retry search");
     // The button disables while processing (guards double-clicks).
-    expect(detailSource).toContain("disabled={processing || quotaBlocked}");
+    expect(detailSource).toContain("disabled={busy || quotaBlocked}");
   });
 
   it("offers a Back to Discover action on the failed card (#fe-2)", () => {
@@ -824,7 +1006,7 @@ describe("Discover failed-state UI is safe and retryable", () => {
     expect(detailSource).toContain("crypto.randomUUID()");
     expect(detailSource).toContain("{ id: search.id, idempotencyKey }");
     // Re-entry guard so a second click never fires a second mutation.
-    expect(detailSource).toContain("if (!search || processing)");
+    expect(detailSource).toContain("if (!search || processing || isActivelyProcessing(search.status))");
   });
 
   it("does not reload the whole page on retry (uses the in-place loader) (#fe-7)", () => {
@@ -1073,14 +1255,9 @@ describe("Add 10 more detail-page wiring", () => {
 
   it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
     expect(detailSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
-    // Refreshes company (totals), people (pagination), and the search in place,
-    // preserving role, location, and the server-side People search.
-    expect(detailSource).toMatch(
-      /await loadPeople\(\{\s*companyId: search\.company\.id,\s*category: activeCategory,\s*location: activeLocation,\s*search: peopleQuery \|\| null,\s*pageIndex: 0,\s*after: null\s*\}\)/
-    );
-    expect(detailSource).toContain(
-      "await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery })"
-    );
+    expect(detailSource).toContain("await refreshCompletedData()");
+    expect(detailSource).toContain("const after = peopleAfterCursors.current[pageIndex] ?? null");
+    expect(detailSource).toContain("search: peopleQuery || null");
     // No hard navigation / full reload.
     expect(detailSource).not.toContain("window.location.reload");
   });

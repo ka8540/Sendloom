@@ -274,7 +274,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).not.toHaveBeenCalled();
   });
 
-  it("preserves Bright continuation and calls Apify only after two timeout attempts", async () => {
+  it("preserves Bright continuation and calls Apify only after three timeout attempts", async () => {
     const onBrightPage = vi.fn(async () => undefined);
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
@@ -294,7 +294,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
       onBrightPage
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(onBrightPage).not.toHaveBeenCalled();
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["apify-after-timeouts"]);
     expect(result.diagnostics).toMatchObject({
@@ -310,12 +310,16 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
   });
 
-  it("counts a successful same-page Bright retry once and avoids Apify", async () => {
+  it("counts a third-attempt same-page Bright success once and avoids Apify", async () => {
     const onBrightPage = vi.fn(async () => undefined);
     const { orchestrator, fetcher, apify } = buildWithBrightResponses([
       new Response("<html>temporary provider page</html>", {
         status: 200,
         headers: { "content-type": "text/html" }
+      }),
+      new Response('{"organic":[', {
+        status: 200,
+        headers: { "content-type": "application/json" }
       }),
       new Response(JSON.stringify({
         organic: [{
@@ -335,7 +339,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
       onBrightPage
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["jane-retry"]);
     expect(onBrightPage).toHaveBeenCalledTimes(1);
     expect(onBrightPage).toHaveBeenCalledWith(expect.objectContaining({
@@ -353,11 +357,12 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).not.toHaveBeenCalled();
   });
 
-  it("keeps the Bright page unchanged and uses existing Apify fallback after both retry attempts fail", async () => {
+  it("keeps the Bright page unchanged and uses existing Apify fallback after all three attempts fail", async () => {
     const onBrightPage = vi.fn(async () => undefined);
     const { orchestrator, fetcher, apify } = buildWithBrightResponses([
       new Response("<html>temporary provider page one</html>", { status: 200 }),
-      new Response("<html>temporary provider page two</html>", { status: 200 })
+      new Response("<html>temporary provider page two</html>", { status: 200 }),
+      new Response("<html>temporary provider page three</html>", { status: 200 })
     ], [profile("apify-after-retry")]);
 
     const result = await orchestrator.discover({
@@ -369,7 +374,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
       onBrightPage
     });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(onBrightPage).not.toHaveBeenCalled();
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["apify-after-retry"]);
     expect(result.diagnostics).toMatchObject({

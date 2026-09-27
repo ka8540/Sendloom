@@ -3,6 +3,8 @@
 // the services and DataLoaders issue — but it keeps real referential state so
 // tests can assert on the resulting Company -> Positions -> People graph.
 
+import { Prisma } from "@prisma/client";
+
 let idCounter = 0;
 function nextId(prefix: string): string {
   idCounter += 1;
@@ -304,6 +306,14 @@ export function createFakePrisma() {
 
     discoverSearchExpansion: {
       create: async ({ data }: { data: Row }) => {
+        // Mirrors the "activeSearchId" unique index: PostgreSQL rejects a second
+        // non-null holder but allows any number of NULLs (completed history).
+        if (data.activeSearchId != null && expansions.some((r) => r.activeSearchId === data.activeSearchId)) {
+          throw new Prisma.PrismaClientKnownRequestError(
+            "Unique constraint failed on the fields: (`activeSearchId`)",
+            { code: "P2002", clientVersion: "test" }
+          );
+        }
         const row = {
           id: nextId("expansion"),
           createdAt: now(),
@@ -316,6 +326,7 @@ export function createFakePrisma() {
           quotaReserved: false,
           exhausted: false,
           errorCode: null,
+          activeSearchId: null,
           completedAt: null,
           ...data
         };
@@ -334,6 +345,15 @@ export function createFakePrisma() {
         const row = expansions.find((r) => r.id === where.id);
         Object.assign(row!, data, { updatedAt: now() });
         return { ...row };
+      },
+      updateMany: async ({ where, data }: { where: Row; data: Row }) => {
+        let count = 0;
+        for (const row of expansions) {
+          if (!matchGeneric(row, where)) continue;
+          Object.assign(row, data, { updatedAt: now() });
+          count += 1;
+        }
+        return { count };
       }
     },
 
@@ -374,6 +394,15 @@ export function createFakePrisma() {
         const row = searches.find((r) => r.id === where.id);
         Object.assign(row!, data, { updatedAt: now() });
         return { ...row };
+      },
+      updateMany: async ({ where, data }: { where: Row; data: Row }) => {
+        let count = 0;
+        for (const row of searches) {
+          if (!matchGeneric(row, where)) continue;
+          Object.assign(row, data, { updatedAt: now() });
+          count += 1;
+        }
+        return { count };
       }
     },
 

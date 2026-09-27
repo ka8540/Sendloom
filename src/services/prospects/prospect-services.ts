@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { recordAuditEvent } from "@/lib/audit";
-import { createDiscoverSearchCompletedNotification } from "@/lib/notifications";
+import {
+  createDiscoverExpansionCompletedNotification,
+  createDiscoverSearchCompletedNotification
+} from "@/lib/notifications";
 import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
 import { DiscoverExpansionService } from "@/services/prospects/discover-expansion-service";
@@ -64,7 +67,10 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     companyResolution,
     roleClassifier,
     roleIntelligence,
-    cache: discoverKnowledge
+    cache: discoverKnowledge,
+    notifyCompleted: async (expansionId) => {
+      await createDiscoverExpansionCompletedNotification(expansionId, prisma);
+    }
   });
 
   return { prospectSearch, discoverExpansion, companyResolution, roleClassifier, emailDomain };

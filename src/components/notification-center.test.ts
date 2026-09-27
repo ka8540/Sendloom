@@ -51,12 +51,34 @@ describe("authenticated notification center", () => {
   });
 
   it("preserves focus refresh and polling with ten-item cursor pages", () => {
-    expect(CENTER).toContain("NOTIFICATION_POLL_INTERVAL_MS = 45_000");
+    expect(CENTER).toContain("NOTIFICATION_POLL_INTERVAL_MS = 12_000");
     expect(CENTER).toContain("NOTIFICATION_PAGE_SIZE = 10");
     expect(CENTER).toContain("limit: String(NOTIFICATION_PAGE_SIZE)");
     expect(CENTER).toContain('window.addEventListener("focus"');
+    expect(CENTER).toContain('document.addEventListener("visibilitychange"');
     expect(CENTER).toContain("fetchNotifications(nextCursor)");
     expect(CENTER).toContain('"Load more"');
+  });
+
+  it("toasts only Discover completions that arrive after the session baseline", () => {
+    // One in-flight request at a time: focus + interval never stack a fetch.
+    expect(CENTER).toContain("if (requestInFlightRef.current) return;");
+    // The first page seeds the baseline and toasts nothing (no unread storm).
+    expect(CENTER).toContain("const seeded = !baselineSetRef.current;");
+    expect(CENTER).toContain("const arrivals = seeded ? [] : selectNewNotifications(page.items, observedIdsRef.current);");
+    expect(CENTER).toContain("page.items.forEach((item) => observedIdsRef.current.add(item.id));");
+    // Only paginated reads are exempt, so a refresh page always re-checks.
+    expect(CENTER).toContain("if (!append) {");
+    // Toasting never marks the bell read and emits one lightweight local event.
+    const arrivalBlock = CENTER.slice(
+      CENTER.indexOf("const seeded = !baselineSetRef.current;"),
+      CENTER.indexOf("setItems((current)")
+    );
+    expect(arrivalBlock).toContain("showSuccess(toast.message, { title: toast.title })");
+    expect(arrivalBlock).toContain("dispatchDiscoverCompletedEvent(item)");
+    expect(arrivalBlock).not.toContain("router.refresh()");
+    expect(arrivalBlock).not.toContain("markOneRead");
+    expect(arrivalBlock).not.toContain("read-all");
   });
 
   it("renders only active unread rows and the caught-up empty state", () => {

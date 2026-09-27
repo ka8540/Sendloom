@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   COMPANY_DETAIL_QUERY,
   CREATE_PROSPECT_IMPORT_MUTATION,
+  DISCOVER_COMPANY_GROUPS_QUERY,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
+  DISCOVER_SEARCH_LIVE_STATE_QUERY,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PREPARE_PROSPECT_EXPORT_MUTATION,
@@ -83,6 +85,21 @@ describe("prospect graphql helper", () => {
     expect(PEOPLE_QUERY).toContain("inferredEmail");
     expect(PROSPECT_SEARCHES_QUERY).toContain("officialWebsiteDomain");
     expect(PROSPECT_SEARCHES_QUERY).toContain("emailDomain");
+  });
+
+  it("keeps active Discover polling on a minimal live-state selection", () => {
+    expect(DISCOVER_SEARCH_LIVE_STATE_QUERY).toContain("query DiscoverSearchLiveState($id: ID!)");
+    expect(DISCOVER_SEARCH_LIVE_STATE_QUERY).toContain("status");
+    expect(DISCOVER_SEARCH_LIVE_STATE_QUERY).toContain("peopleCount");
+    expect(DISCOVER_SEARCH_LIVE_STATE_QUERY).toContain("latestExpansion");
+    expect(DISCOVER_SEARCH_LIVE_STATE_QUERY).not.toMatch(/company\s*\{|people\s*\(|email|position/i);
+  });
+
+  it("requests durable expansion state for grouped Search History rows", () => {
+    expect(DISCOVER_COMPANY_GROUPS_QUERY).toContain("latestExpansion");
+    for (const field of ["id", "status", "addedCount", "createdAt", "updatedAt"]) {
+      expect(DISCOVER_COMPANY_GROUPS_QUERY).toContain(field);
+    }
   });
 
   it("declares the delete-company mutation", () => {

@@ -116,6 +116,7 @@ export type ProspectSearchNode = {
   createdAt: string;
   completedAt: string | null;
   company: CompanySummary | null;
+  latestExpansion?: DiscoverSearchExpansion | null;
 };
 
 // One consolidated Search History entry: every search the current user ran for
@@ -129,6 +130,10 @@ export type DiscoverGroupSearchNode = {
   peopleCount: number;
   createdAt: string;
   completedAt: string | null;
+  latestExpansion?: Pick<
+    DiscoverSearchExpansion,
+    "id" | "status" | "addedCount" | "createdAt" | "updatedAt"
+  > | null;
 };
 
 export type DiscoverCompanyGroupNode = {
@@ -159,6 +164,16 @@ export type DiscoverSearchExpansion = {
   quotaRemaining: number;
   exhausted: boolean;
   message: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Minimal durable state used by the invisible three-second live sync. */
+export type DiscoverSearchLiveState = {
+  id: string;
+  status: ProspectSearchStatus;
+  peopleCount: number;
+  latestExpansion: DiscoverSearchExpansion | null;
 };
 
 export type PositionNode = {
@@ -209,6 +224,7 @@ export type CompanySearchNode = {
   positionCategories: PositionCategory[];
   peopleCount: number;
   createdAt: string;
+  latestExpansion?: DiscoverSearchExpansion | null;
 };
 
 export type CompanyDetail = {
@@ -432,6 +448,13 @@ export const DISCOVER_COMPANY_GROUPS_QUERY = /* GraphQL */ `
             peopleCount
             createdAt
             completedAt
+            latestExpansion {
+              id
+              status
+              addedCount
+              createdAt
+              updatedAt
+            }
           }
         }
       }
@@ -464,6 +487,9 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
       exhausted
       createdAt
       completedAt
+      latestExpansion {
+        id searchId status requestedCount addedCount totalPeopleCount quotaRemaining exhausted message createdAt updatedAt
+      }
       company {
         id
         name
@@ -474,6 +500,31 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
         emailPattern
         patternConfidence
         peopleCount
+      }
+    }
+  }
+`;
+
+// Deliberately excludes company details, people rows, evidence, positions, and
+// provider data. Active Discover polling must remain an invisible status sync.
+export const DISCOVER_SEARCH_LIVE_STATE_QUERY = /* GraphQL */ `
+  query DiscoverSearchLiveState($id: ID!) {
+    prospectSearch(id: $id) {
+      id
+      status
+      peopleCount
+      latestExpansion {
+        id
+        searchId
+        status
+        requestedCount
+        addedCount
+        totalPeopleCount
+        quotaRemaining
+        exhausted
+        message
+        createdAt
+        updatedAt
       }
     }
   }
@@ -539,6 +590,9 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
+        latestExpansion {
+          id searchId status requestedCount addedCount totalPeopleCount quotaRemaining exhausted message createdAt updatedAt
+        }
       }
     }
   }
@@ -663,6 +717,8 @@ export const ADD_MORE_DISCOVER_PEOPLE_MUTATION = /* GraphQL */ `
       quotaRemaining
       exhausted
       message
+      createdAt
+      updatedAt
     }
   }
 `;

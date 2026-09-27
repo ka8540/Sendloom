@@ -13,12 +13,18 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useErrorToast } from "@/components/error-toast-provider";
+import {
+  dispatchDiscoverCompletedEvent,
+  discoverCompletionToast,
+  selectNewNotifications
+} from "@/lib/discover-notification-live";
 import type { AppNotificationItem, AppNotificationPage } from "@/lib/notifications";
 import { formatUnreadBadge, notificationNavigationHref } from "@/lib/notification-ui";
 
 import styles from "./notification-center.module.css";
 
-const NOTIFICATION_POLL_INTERVAL_MS = 45_000;
+const NOTIFICATION_POLL_INTERVAL_MS = 12_000;
 const NOTIFICATION_PAGE_SIZE = 10;
 
 function notificationTime(createdAt: string): string {
@@ -43,6 +49,7 @@ function mergeNotificationPages(current: AppNotificationItem[], incoming: AppNot
 
 export function NotificationCenter() {
   const router = useRouter();
+  const { showSuccess } = useErrorToast();
   const rootRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -54,8 +61,13 @@ export function NotificationCenter() {
   const [markingAll, setMarkingAll] = useState(false);
   const [activeNotificationId, setActiveNotificationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const baselineSetRef = useRef(false);
+  const observedIdsRef = useRef(new Set<string>());
+  const requestInFlightRef = useRef(false);
 
   const fetchNotifications = useCallback(async (cursor: string | null = null) => {
+    if (requestInFlightRef.current) return;
+    requestInFlightRef.current = true;
     const append = Boolean(cursor);
     append ? setLoadingMore(true) : setLoading(true);
     setError(null);
@@ -72,24 +84,45 @@ export function NotificationCenter() {
         throw new Error("Notifications could not be loaded.");
       }
       const page = (await response.json()) as AppNotificationPage;
+      if (!append) {
+        // The first page of a session is the baseline: seed it and toast nothing
+        // so a reload never replays the existing inbox.
+        const seeded = !baselineSetRef.current;
+        baselineSetRef.current = true;
+        const arrivals = seeded ? [] : selectNewNotifications(page.items, observedIdsRef.current);
+        page.items.forEach((item) => observedIdsRef.current.add(item.id));
+
+        for (const item of arrivals) {
+          const toast = discoverCompletionToast(item);
+          if (!toast) continue;
+          showSuccess(toast.message, { title: toast.title });
+          dispatchDiscoverCompletedEvent(item);
+        }
+      }
       setItems((current) => (append ? mergeNotificationPages(current, page.items) : page.items));
       setUnreadCount(page.unreadCount);
       setNextCursor(page.nextCursor);
     } catch {
       setError("Notifications could not be loaded. Try again.");
     } finally {
+      requestInFlightRef.current = false;
       append ? setLoadingMore(false) : setLoading(false);
     }
-  }, []);
+  }, [showSuccess]);
 
   useEffect(() => {
     void fetchNotifications();
     const interval = window.setInterval(() => void fetchNotifications(), NOTIFICATION_POLL_INTERVAL_MS);
     const refreshOnFocus = () => void fetchNotifications();
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") void fetchNotifications();
+    };
     window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [fetchNotifications]);
 

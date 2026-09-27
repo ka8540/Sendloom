@@ -17,6 +17,7 @@ function makeContext(options: {
   userId?: string;
   authError?: string | null;
   services?: Partial<GraphQLContext["services"]>;
+  defer?: GraphQLContext["defer"];
 }): GraphQLContext {
   const prisma = options.prisma ?? createFakePrisma();
   const userId = options.userId ?? options.user?.id ?? "__anonymous__";
@@ -26,7 +27,8 @@ function makeContext(options: {
     requestId: "test-request",
     prisma: prisma as unknown as PrismaClient,
     services: (options.services ?? {}) as GraphQLContext["services"],
-    loaders: createLoaders(prisma as unknown as PrismaClient, userId)
+    loaders: createLoaders(prisma as unknown as PrismaClient, userId),
+    defer: options.defer
   };
 }
 
@@ -813,6 +815,35 @@ describe("Company email inference API", () => {
 });
 
 describe("Discover quota GraphQL surface", () => {
+  it("returns durable processing state before running normal Discover in the background", async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const startSearch = vi.fn(async () => ({
+      search: { id: "s1", status: "RESOLVING_COMPANY" },
+      shouldProcess: true
+    }));
+    const processStartedSearch = vi.fn(async () => undefined);
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { processProspectSearch(id: "s1", idempotencyKey: "attempt-1") { id status } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        defer: (task) => deferred.push(task),
+        services: {
+          prospectSearch: { startSearch, processStartedSearch } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.processProspectSearch).toEqual({ id: "s1", status: "RESOLVING_COMPANY" });
+    expect(processStartedSearch).not.toHaveBeenCalled();
+    expect(deferred).toHaveLength(1);
+    await deferred[0]();
+    expect(processStartedSearch).toHaveBeenCalledWith("user_A", "s1", {
+      actorEmail: "a@example.com",
+      idempotencyKey: "attempt-1"
+    });
+  });
+
   it("maps a DISCOVER_DAILY_LIMIT_REACHED service error to a safe structured error (#9)", async () => {
     const processSearch = vi.fn(async () => {
       throw new ProspectError(
@@ -930,6 +961,56 @@ describe("Discover failure surface is sanitized", () => {
 });
 
 describe("addMoreDiscoverPeople expansion mutation", () => {
+  it("returns PROCESSING and defers Add More provider work", async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const createdAt = new Date("2026-09-26T12:00:00.000Z");
+    const updatedAt = new Date("2026-09-26T12:00:01.000Z");
+    const startAddMorePeople = vi.fn(async () => ({
+      id: "exp_1",
+      searchId: "s1",
+      status: "PROCESSING",
+      requestedCount: 10,
+      addedCount: 0,
+      totalPeopleCount: 10,
+      quotaRemaining: 3,
+      exhausted: false,
+      message: null,
+      createdAt,
+      updatedAt,
+      shouldProcess: true
+    }));
+    const processStartedExpansion = vi.fn(async () => undefined);
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id status addedCount createdAt updatedAt } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        defer: (task) => deferred.push(task),
+        services: {
+          discoverExpansion: {
+            startAddMorePeople,
+            processStartedExpansion
+          } as unknown as GraphQLContext["services"]["discoverExpansion"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.addMoreDiscoverPeople).toEqual({
+      id: "exp_1",
+      status: "PROCESSING",
+      addedCount: 0,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString()
+    });
+    expect(processStartedExpansion).not.toHaveBeenCalled();
+    await deferred[0]();
+    expect(processStartedExpansion).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user_A", searchId: "s1", idempotencyKey: "k1" }),
+      "exp_1"
+    );
+  });
+
   it("delegates to the expansion service with the session email, never input", async () => {
     const addMorePeople = vi.fn(async () => ({
       id: "exp_1",
@@ -1207,6 +1288,27 @@ describe("Grouped Search History GraphQL surface", () => {
     };
     mkSearch("s_engineer", ["Software Engineer"], new Date("2026-07-04T10:00:00.000Z"));
     mkSearch("s_recruiter", ["Recruiter"], new Date("2026-07-04T09:00:00.000Z"));
+    const expansionCreatedAt = new Date("2026-07-04T10:05:00.000Z");
+    const expansionUpdatedAt = new Date("2026-07-04T10:06:00.000Z");
+    prisma._state.expansions.push({
+      id: "exp_engineer",
+      searchId: "s_engineer",
+      userId: "user_A",
+      idempotencyKey: "add-more-engineers",
+      activeSearchId: "s_engineer",
+      requestedCount: 10,
+      addedCount: 0,
+      cacheCount: 0,
+      providerCount: 0,
+      totalPeopleCount: 2,
+      quotaReserved: false,
+      exhausted: false,
+      status: "PROCESSING",
+      errorCode: null,
+      createdAt: expansionCreatedAt,
+      updatedAt: expansionUpdatedAt,
+      completedAt: null
+    });
     const mkPerson = (id: string, sourceProfileId: string) => {
       prisma._state.people.push({
         id,
@@ -1259,7 +1361,10 @@ describe("Grouped Search History GraphQL surface", () => {
               displayName
               requestedRoles
               peopleCount
-              searches { id }
+              searches {
+                id
+                latestExpansion { id status addedCount createdAt updatedAt }
+              }
               company { id name }
             }
           }
@@ -1276,7 +1381,16 @@ describe("Grouped Search History GraphQL surface", () => {
           id: string;
           requestedRoles: string[];
           peopleCount: number;
-          searches: Array<{ id: string }>;
+          searches: Array<{
+            id: string;
+            latestExpansion: {
+              id: string;
+              status: string;
+              addedCount: number;
+              createdAt: string;
+              updatedAt: string;
+            } | null;
+          }>;
           company: { id: string; name: string } | null;
         };
       }>;
@@ -1288,6 +1402,13 @@ describe("Grouped Search History GraphQL surface", () => {
     expect(node.company?.id).toBe("comp_walmart");
     expect(node.requestedRoles).toEqual(["Software Engineer", "Recruiter"]);
     expect(node.searches.map((child) => child.id).sort()).toEqual(["s_engineer", "s_recruiter"]);
+    expect(node.searches.find((child) => child.id === "s_engineer")?.latestExpansion).toEqual({
+      id: "exp_engineer",
+      status: "PROCESSING",
+      addedCount: 0,
+      createdAt: expansionCreatedAt.toISOString(),
+      updatedAt: expansionUpdatedAt.toISOString()
+    });
     // Unique union of the user's allocations: p1, p2, p3 → 3 (p2 counted once).
     expect(node.peopleCount).toBe(3);
   });

@@ -48,6 +48,7 @@ import {
   COMPANY_DETAIL_QUERY,
   CREATE_PROSPECT_IMPORT_MUTATION,
   DELETE_COMPANY_MUTATION,
+  DISCOVER_SEARCH_LIVE_STATE_QUERY,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   DISCOVER_QUOTA_QUERY,
   PEOPLE_PAGE_SIZE,
@@ -65,6 +66,7 @@ import {
   type ConfidenceLevel,
   type Connection,
   type DiscoverQuota,
+  type DiscoverSearchLiveState,
   type DiscoverSearchExpansion,
   type PersonNode,
   type PositionCategory,
@@ -72,7 +74,8 @@ import {
   type ProspectImportResult,
   type ProspectSelectionInput,
   type ProspectSelectionReview,
-  type ProspectSearchNode
+  type ProspectSearchNode,
+  type ProspectSearchStatus
 } from "@/components/prospects/prospect-graphql";
 import {
   ADD_MORE_CANCEL_LABEL,
@@ -127,10 +130,14 @@ import {
   companySearchNoResultsMessage,
   companySearchSuccessMessage,
   confidenceBadge,
-  effectiveSearchStatus,
+  deriveDiscoverSearchUiState,
+  discoverSearchStatusBadge,
   isNoResultsSearch,
+  isActiveDiscoverExpansion,
+  isActivelyProcessing,
   createEmptyProspectSelection,
   deriveDiscoverQualitySummary,
+  discoverProcessingStageLabel,
   describeQualitySummary,
   emailConfidenceFromUsableRate,
   emailFormatEvidenceSummary,
@@ -155,7 +162,6 @@ import {
   selectAllMatchingProspects,
   shouldShowAddMore,
   scopeMatchesSelection,
-  statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
   type AddMoreCandidateSearch,
@@ -182,6 +188,7 @@ import {
   type ReviewIntent
 } from "@/components/prospects/prospects-shared";
 import { useManual } from "@/components/manual/ManualProvider";
+import { useDiscoverLivePolling } from "@/components/prospects/use-discover-live-polling";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
@@ -201,6 +208,11 @@ const ALL_LOCATIONS_VALUE = "__all_locations__";
 const PEOPLE_SEARCH_DEBOUNCE_MS = 250;
 
 type DetailStage = "ready" | "draft" | "processing" | "failed";
+type ActiveLiveTarget = {
+  id: string;
+  searchActive: boolean;
+  expansionId: string | null;
+};
 type CompanySearchNotice = {
   tone: "info" | "error";
   message: string;
@@ -284,6 +296,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [companyRoleTitle, setCompanyRoleTitle] = useState("");
   const [companyRoleLocation, setCompanyRoleLocation] = useState("");
   const [companySearching, setCompanySearching] = useState(false);
+  const [pendingSearchIds, setPendingSearchIds] = useState<string[]>([]);
   const [companySearchNotice, setCompanySearchNotice] = useState<CompanySearchNotice | null>(null);
   const [expanding, setExpanding] = useState(false);
   const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
@@ -306,6 +319,48 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
   const selectedView = resolveSelectedSearchView(search);
+  const durableExpansions = useMemo(
+    () =>
+      [search, ...(company?.searches ?? [])]
+        .flatMap((entry) =>
+          entry && deriveDiscoverSearchUiState(entry).isExpansionActive && entry.latestExpansion
+            ? [entry.latestExpansion]
+            : []
+        )
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [company?.searches, search]
+  );
+  const activeExpansion = durableExpansions[0] ?? null;
+  const addingMore = expanding || Boolean(activeExpansion);
+  const activeLiveTargets = useMemo(() => {
+    const targets = new Map<string, ActiveLiveTarget>();
+    const include = (entry: {
+      id: string;
+      status: ProspectSearchStatus;
+      peopleCount: number;
+      latestExpansion?: DiscoverSearchExpansion | null;
+    }) => {
+      const searchActive = isActivelyProcessing(entry.status);
+      const expansionId = deriveDiscoverSearchUiState({
+        status: entry.status,
+        peopleCount: entry.peopleCount,
+        latestExpansion: entry.latestExpansion
+      }).isExpansionActive
+        ? entry.latestExpansion?.id ?? null
+        : null;
+      if (searchActive || expansionId) {
+        targets.set(entry.id, { id: entry.id, searchActive, expansionId });
+      }
+    };
+    if (search) include(search);
+    for (const entry of company?.searches ?? []) include(entry);
+    for (const id of pendingSearchIds) {
+      const existing = targets.get(id);
+      targets.set(id, existing ?? { id, searchActive: true, expansionId: null });
+    }
+    return [...targets.values()];
+  }, [company?.searches, pendingSearchIds, search]);
+  const hasActiveSearch = activeLiveTargets.some((target) => target.searchActive);
 
   const { manual: discoverManual, isOpen: manualOpen, openManualStage, isStageComplete } = useManual();
   const autoTourStagesRef = useRef<Set<string>>(new Set());
@@ -405,12 +460,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // Preserves the active category/location on a silent refresh (keeps the
   // current view).
   const loadDetail = useCallback(
-    async (options: { category?: PositionCategory | null; location?: string | null; search?: string | null } = {}) => {
+    async (options: {
+      category?: PositionCategory | null;
+      location?: string | null;
+      search?: string | null;
+      silent?: boolean;
+    } = {}) => {
       const category = options.category ?? null;
       const location = options.location ?? null;
       const textSearch = options.search ?? null;
       const req = ++searchReq.current;
-      setSearchLoading(true);
+      if (!options.silent) setSearchLoading(true);
       const result = await prospectGraphql<{ prospectSearch: ProspectSearchNode | null }>(PROSPECT_SEARCH_BY_ID_QUERY, {
         id: searchId
       });
@@ -447,6 +507,123 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     [loadCompany, loadPeople, resetPeopleState, searchId]
   );
 
+  // A completion refresh is intentionally separate from status polling. It
+  // preserves the current People filters, cursor page, selection, and scroll;
+  // unlike loadDetail's initial-load path it never clears or resets the table.
+  const refreshCompletedData = useCallback(async () => {
+    const req = ++searchReq.current;
+    const result = await prospectGraphql<{ prospectSearch: ProspectSearchNode | null }>(PROSPECT_SEARCH_BY_ID_QUERY, {
+      id: searchId
+    });
+    if (req !== searchReq.current) return;
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    const node = result.data?.prospectSearch ?? null;
+    if (!node) return;
+    setSearch(node);
+
+    if (node.status === "READY" && node.company && !isNoResultsSearch(node)) {
+      const pageIndex = peoplePageIndex;
+      const after = peopleAfterCursors.current[pageIndex] ?? null;
+      await Promise.all([
+        loadCompany(node.company.id),
+        loadPeople({
+          companyId: node.company.id,
+          category: activeCategory,
+          location: activeLocation,
+          search: peopleQuery || null,
+          pageIndex,
+          after
+        }),
+        loadQuota()
+      ]);
+      return;
+    }
+    await loadQuota();
+  }, [activeCategory, activeLocation, loadCompany, loadPeople, loadQuota, peoplePageIndex, peopleQuery, searchId]);
+
+  const completedLiveRefreshes = useRef(new Set<string>());
+  const syncDiscoverLiveState = useCallback(async () => {
+    const targets = activeLiveTargets;
+    if (targets.length === 0) return;
+    const results = await Promise.all(
+      targets.map((target) =>
+        prospectGraphql<{ prospectSearch: DiscoverSearchLiveState | null }>(DISCOVER_SEARCH_LIVE_STATE_QUERY, {
+          id: target.id
+        })
+      )
+    );
+    const states = results
+      .map((result) => result.data?.prospectSearch ?? null)
+      .filter((state): state is DiscoverSearchLiveState => Boolean(state));
+    if (states.length === 0) return;
+
+    const byId = new Map(states.map((state) => [state.id, state]));
+    setSearch((current) => {
+      const live = current ? byId.get(current.id) : null;
+      return current && live
+        ? { ...current, status: live.status, peopleCount: live.peopleCount, latestExpansion: live.latestExpansion }
+        : current;
+    });
+    setCompany((current) =>
+      current
+        ? {
+            ...current,
+            searches: current.searches.map((entry) => {
+              const live = byId.get(entry.id);
+              return live
+                ? { ...entry, status: live.status, peopleCount: live.peopleCount, latestExpansion: live.latestExpansion }
+                : entry;
+            })
+          }
+        : current
+    );
+
+    let refreshCompleted = false;
+    const terminalPendingIds: string[] = [];
+    for (const target of targets) {
+      const live = byId.get(target.id);
+      if (!live) continue;
+      if (target.searchActive && !isActivelyProcessing(live.status)) {
+        terminalPendingIds.push(target.id);
+        const key = `search:${target.id}:${live.status}`;
+        if (!completedLiveRefreshes.current.has(key)) {
+          completedLiveRefreshes.current.add(key);
+          refreshCompleted = true;
+        }
+      }
+      const expansion = live.latestExpansion;
+      if (
+        target.expansionId &&
+        expansion?.id === target.expansionId &&
+        !isActiveDiscoverExpansion(expansion.status)
+      ) {
+        const key = `expansion:${expansion.id}:${expansion.status}`;
+        if (!completedLiveRefreshes.current.has(key)) {
+          completedLiveRefreshes.current.add(key);
+          setExpanding(false);
+          if (expansion.status === "READY") {
+            refreshCompleted = true;
+            if (expansion.addedCount === 0) setNoMorePeopleOpen(true);
+          } else {
+            setActionError("We couldn't add more people right now. Please try again.");
+          }
+        }
+      }
+    }
+    if (terminalPendingIds.length > 0) {
+      setPendingSearchIds((current) => current.filter((id) => !terminalPendingIds.includes(id)));
+    }
+    if (refreshCompleted) await refreshCompletedData();
+  }, [activeLiveTargets, refreshCompletedData]);
+
+  useDiscoverLivePolling({
+    active: activeLiveTargets.length > 0,
+    refresh: syncDiscoverLiveState
+  });
+
   useEffect(() => {
     // Never carry another company's correction editors, drafts, selection, or
     // notices into this search — every route change starts from a clean slate.
@@ -464,6 +641,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
     setCompanySearchNotice(null);
+    setPendingSearchIds([]);
+    completedLiveRefreshes.current.clear();
     setShowAddMoreDialog(false);
     setNoMorePeopleOpen(false);
     void loadDetail();
@@ -656,7 +835,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     // Guard against a double-click launching a second processing run — the
     // backend is also idempotent (idempotency key + per-fingerprint lock + quota),
     // but this keeps the UI from firing a second request at all.
-    if (!search || processing) {
+    if (!search || processing || isActivelyProcessing(search.status)) {
       return;
     }
     // A fresh key per deliberate click = a new processing attempt; a browser/
@@ -668,23 +847,33 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setProcessing(true);
     setActionError(null);
     setActionNotice(null);
-    const result = await prospectGraphql<{ processProspectSearch: { id: string; status: string } }>(
+    const result = await prospectGraphql<{ processProspectSearch: { id: string; status: ProspectSearchStatus } }>(
       PROCESS_SEARCH_MUTATION,
       { id: search.id, idempotencyKey }
     );
-    setProcessing(false);
     if (result.disabled) {
+      setProcessing(false);
       setDisabled(true);
       return;
     }
     void loadQuota();
     if (result.error || !result.data) {
+      setProcessing(false);
       setActionError(result.error ?? "We couldn't start the search. Please try again.");
       await loadDetail({ category: activeCategory });
       return;
     }
-    await loadDetail({ category: activeCategory });
-  }, [activeCategory, loadDetail, loadQuota, processing, search]);
+    const started = result.data.processProspectSearch;
+    // The mutation returns the durable server stage. Commit it before dropping
+    // the click flag so an active search can never flash back to Draft.
+    setSearch((current) =>
+      current && current.id === started.id ? { ...current, status: started.status } : current
+    );
+    setProcessing(false);
+    if (!isActivelyProcessing(started.status)) {
+      await refreshCompletedData();
+    }
+  }, [activeCategory, loadDetail, loadQuota, processing, refreshCompletedData, search]);
 
   const handleCancel = useCallback(async () => {
     if (!search) {
@@ -765,7 +954,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       !search ||
       (search.status !== "READY" && search.status !== "NO_RESULTS") ||
       !search.company ||
-      expanding ||
+      addingMore ||
       !targetSearchId
     ) {
       return;
@@ -784,19 +973,41 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       ADD_MORE_DISCOVER_PEOPLE_MUTATION,
       { searchId: targetSearchId, idempotencyKey }
     );
-    setExpanding(false);
     void loadQuota();
 
     if (result.disabled) {
+      setExpanding(false);
       setDisabled(true);
       return;
     }
     if (result.error || !result.data) {
+      setExpanding(false);
       setActionError(result.error ?? "Could not add more people. Please try again.");
       return;
     }
 
     const expansion = result.data.addMoreDiscoverPeople;
+    if (isActiveDiscoverExpansion(expansion.status)) {
+      // Persist the returned durable expansion in local state before clearing
+      // the click flag. The three-second loop can now poll only this search's
+      // lightweight live state while the rendered People table stays untouched.
+      setSearch((current) =>
+        current && current.id === targetSearchId ? { ...current, latestExpansion: expansion } : current
+      );
+      setCompany((current) =>
+        current
+          ? {
+              ...current,
+              searches: current.searches.map((entry) =>
+                entry.id === targetSearchId ? { ...entry, latestExpansion: expansion } : entry
+              )
+            }
+          : current
+      );
+      setExpanding(false);
+      return;
+    }
+    setExpanding(false);
     // Added nobody → centered dialog, and the button stays exactly where it is.
     // Exhaustion is never mirrored into visibility: re-running a dry search is a
     // free server no-op that simply re-opens this dialog.
@@ -806,21 +1017,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
     }
 
-    // Refresh counts + people in place (new people land on later pages).
-    if (search.company) {
-      peopleAfterCursors.current = [null];
-      await loadCompany(search.company.id);
-      await loadPeople({
-        companyId: search.company.id,
-        category: activeCategory,
-        location: activeLocation,
-        search: peopleQuery || null,
-        pageIndex: 0,
-        after: null
-      });
-    }
-    await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
-  }, [activeCategory, activeLocation, expanding, loadCompany, loadDetail, loadPeople, loadQuota, peopleQuery, search]);
+    // Terminal-at-response is uncommon, but follows the same single targeted
+    // completion refresh as the polled path.
+    await refreshCompletedData();
+  }, [addingMore, loadQuota, refreshCompletedData, search]);
 
   // Disclosure for the "Search this company" panel. Opening is a plain toggle;
   // closing hands focus back to the header trigger so keyboard users are never
@@ -839,7 +1039,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // answers instantly with the same copy the server would return — and the
   // server re-checks authoritatively (no quota charge, no provider call).
   const handleSearchCompany = useCallback(async () => {
-    if (!company || companySearching) {
+    if (!company || companySearching || hasActiveSearch) {
       return;
     }
     // Validate/canonicalize before duplicate-checking. Raw partial text remains
@@ -901,14 +1101,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         idempotencyKey
       }
     );
-    setCompanySearching(false);
     void loadQuota();
 
     if (result.disabled) {
+      setCompanySearching(false);
       setDisabled(true);
       return;
     }
     if (result.error || !result.data) {
+      setCompanySearching(false);
       setCompanySearchNotice({
         tone: result.errorCode === "DUPLICATE_ROLE_LOCATION" ? "info" : "error",
         message: result.error ?? "We couldn't start the search. Please try again."
@@ -916,6 +1117,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       return;
     }
     const created = result.data.searchCompanyRole;
+    if (isActivelyProcessing(created.status)) {
+      setPendingSearchIds((current) => (current.includes(created.id) ? current : [...current, created.id]));
+      setCompanySearchOpen(false);
+      setCompanyRoleTitle("");
+      setCompanyRoleLocation("");
+      setCompanySearching(false);
+      return;
+    }
+    setCompanySearching(false);
     if (created.status === "FAILED") {
       setCompanySearchNotice({ tone: "error", message: formatSearchError(created).message });
       await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
@@ -948,6 +1158,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     companyRoleLocation,
     companyRoleTitle,
     companySearching,
+    hasActiveSearch,
     loadDetail,
     loadQuota,
     peopleQuery
@@ -1107,7 +1318,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       status: search.status,
       canSearchAgain: canSearchCompanyAgain(company ?? search.company)
     });
-  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
+  const addMoreDisabled = addMoreDisabledReason(quota, addingMore);
 
   // The grouped company's child searches (this user's only). Falls back to the
   // routed search so a company payload without siblings still targets itself.
@@ -1408,9 +1619,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               {roleLabel} · {locationLabel}
             </p>
             <div className={styles.detailHeaderMeta}>
-              {/* Effective status: a legacy zero-result READY row must read
-                  "No results" here, never "Ready". */}
-              <BadgePill badge={statusBadge(effectiveSearchStatus(search))} />
+              {/* Shared status includes both the base search and Add More. */}
+              <BadgePill badge={discoverSearchStatusBadge(search)} />
               <span className={styles.detailHeaderMetaItem}>
                 <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
               </span>
@@ -1458,10 +1668,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 aria-controls={COMPANY_SEARCH_PANEL_ID}
                 aria-label={COMPANY_SEARCH_TITLE}
                 data-discover-tour="company-search"
+                disabled={hasActiveSearch}
               >
-                <Search className={styles.companySearchTriggerIcon} aria-hidden="true" />
+                {hasActiveSearch ? (
+                  <LoaderCircle className={`${styles.companySearchTriggerIcon} ${styles.spin}`} aria-hidden="true" />
+                ) : (
+                  <Search className={styles.companySearchTriggerIcon} aria-hidden="true" />
+                )}
                 {/* Hidden at rest (icon-only); slides in on hover/focus/open. */}
-                <span className={styles.companySearchTriggerLabel}>{COMPANY_SEARCH_TRIGGER_LABEL}</span>
+                <span className={styles.companySearchTriggerLabel}>
+                  {hasActiveSearch ? COMPANY_SEARCH_LOADING_LABEL : COMPANY_SEARCH_TRIGGER_LABEL}
+                </span>
               </button>
               {/* Decorative helper card — the button's aria-label carries the
                   real accessible name, so this stays aria-hidden. */}
@@ -1519,7 +1736,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <StatusCard
           search={search}
           quota={quota}
-          processing={selectedView === "no-results" ? expanding : processing}
+          processing={selectedView === "no-results" ? addingMore : processing}
           onProcess={selectedView === "no-results" ? handleRequestAddMore : handleProcess}
           onCancel={handleCancel}
         />
@@ -1667,15 +1884,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                         onClick={handleRequestAddMore}
                         disabled={addMoreDisabled !== null}
                         title={addMoreDisabled ?? undefined}
-                        aria-label={ADD_MORE_PEOPLE_LABEL}
+                        aria-label={addingMore ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_LABEL}
                         aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
                       >
-                        {expanding ? (
+                        {addingMore ? (
                           <LoaderCircle className={styles.spin} aria-hidden="true" />
                         ) : (
                           <UserPlus aria-hidden="true" />
                         )}
-                        <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
+                        <span>{addingMore ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
                       </button>
                       {addMoreDisabled === null && (
                         <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
@@ -1854,7 +2071,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         open={showAddMoreDialog}
         peopleCount={company?.peopleCount ?? search.peopleCount ?? 0}
         quota={quota}
-        expanding={expanding}
+        expanding={addingMore}
         target={addMoreTarget}
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
@@ -2582,11 +2799,15 @@ export function StatusCard({
   onProcess: () => void;
   onCancel: () => void;
 }) {
-  // Effective status: a legacy zero-result READY row reads as NO_RESULTS.
+  const uiState = deriveDiscoverSearchUiState(search);
   const noResults = isNoResultsSearch(search);
-  const badge = statusBadge(effectiveSearchStatus(search));
+  const badge = discoverSearchStatusBadge(search);
+  const draft = search.status === "DRAFT";
   const failed = search.status === "FAILED";
   const canceled = search.status === "CANCELED";
+  const serverProcessing = uiState.isProcessing;
+  const busy = processing || serverProcessing;
+  const processingLabel = discoverProcessingStageLabel(search.status);
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
   const quotaBlocked = noResults
@@ -2605,10 +2826,10 @@ export function StatusCard({
         <BadgePill badge={badge} />
         <h2 className={styles.panelTitle}>{search.company?.name ?? search.requestedCompany}</h2>
       </div>
-      {processing ? (
+      {busy ? (
         <p className={styles.statusBody}>
-          <LoaderCircle aria-hidden="true" className={styles.spin} /> Processing — this can take up to a minute while we resolve
-          the company, search people, and infer the email domain and pattern.
+          <LoaderCircle aria-hidden="true" className={styles.spin} /> {processingLabel} Your search is continuing in the
+          background.
         </p>
       ) : failed ? (
         <>
@@ -2629,36 +2850,38 @@ export function StatusCard({
         </>
       ) : canceled ? (
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
-      ) : quotaBlocked ? (
+      ) : draft && quotaBlocked ? (
         <p className={styles.statusBody}>
           You&apos;ve used today&apos;s {quota?.dailySearchLimit ?? 4} Discover searches.
           {resetLabel ? ` ${resetLabel}.` : ""}
         </p>
-      ) : (
+      ) : draft ? (
         <p className={styles.statusBody}>
           This search is still a draft. Run Process to resolve the company and discover up to {perSearch} people.
         </p>
+      ) : (
+        <p className={styles.statusBody}>Preparing results… Your search is continuing in the background.</p>
       )}
       <div className={styles.statusActions}>
-        {!canceled && (
+        {!canceled && (draft || failed || noResults || busy) && (
           <button
             type="button"
             className={styles.primaryButton}
             onClick={onProcess}
-            disabled={processing || quotaBlocked}
+            disabled={busy || quotaBlocked}
             data-discover-tour="process-action"
           >
-            {processing ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
+            {busy ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
             {noResults
-              ? processing
+              ? busy
                 ? NO_RESULTS_RETRYING_LABEL
                 : NO_RESULTS_RETRY_LABEL
               : failed
-                ? processing
+                ? busy
                   ? "Retrying search…"
                   : "Retry search"
-                : processing
-                  ? "Processing…"
+                : busy
+                  ? processingLabel
                   : "Process search"}
           </button>
         )}
