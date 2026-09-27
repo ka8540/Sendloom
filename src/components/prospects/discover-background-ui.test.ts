@@ -12,7 +12,9 @@ const DETAIL = readFileSync("src/components/prospects/prospect-detail-view.tsx",
 const LIST = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
 const POLLING = readFileSync("src/components/prospects/use-discover-live-polling.ts", "utf8");
 const DASHBOARD = readFileSync("src/components/dashboard/overview-command-center.tsx", "utf8");
+const DASHBOARD_LIVE = readFileSync("src/components/dashboard/discover-live-refresh.tsx", "utf8");
 const NOTIFICATIONS = readFileSync("src/components/notification-center.tsx", "utf8");
+const GRAPHQL = readFileSync("src/components/prospects/prospect-graphql.ts", "utf8");
 
 /** Resolves pending microtasks so an awaited refresh settles under fake timers. */
 async function flush() {
@@ -29,17 +31,59 @@ describe("Discover durable background UI wiring", () => {
     expect(DETAIL).toContain("addMoreDisabledReason(quota, addingMore)");
     expect(DETAIL).toContain("addingMore ? ADD_MORE_LOADING_LABEL");
     // The click flag is immediate feedback only; the durable row decides.
-    expect(DETAIL).toContain("active: hasActiveSearch || Boolean(activeExpansion)");
+    expect(DETAIL).toContain("active: activeLiveTargets.length > 0");
   });
 
-  it("polls the table silently so filters, tabs, and pagination survive", () => {
-    expect(DETAIL).toContain(
-      "loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery, silent: true })"
-    );
-    expect(LIST).toContain("active: hasActiveDiscoverWork");
-    expect(LIST).toContain("loadSearches({ silent: true })");
+  it("polls lightweight state while preserving rendered tables and local controls", () => {
+    expect(GRAPHQL).toContain("query DiscoverSearchLiveState($id: ID!)");
+    expect(GRAPHQL.slice(GRAPHQL.indexOf("query DiscoverSearchLiveState"), GRAPHQL.indexOf("export const COMPANY_DETAIL_QUERY")))
+      .not.toMatch(/company\s*\{|people\s*\(|email|position/i);
+    expect(DETAIL).toContain("DISCOVER_SEARCH_LIVE_STATE_QUERY");
+    expect(DETAIL).toContain("refresh: syncDiscoverLiveState");
+    expect(DETAIL).not.toContain("refresh: async () => {\n      await Promise.all([\n        loadDetail");
+    expect(DETAIL).toContain("const pageIndex = peoplePageIndex");
+    expect(DETAIL).toContain("peopleAfterCursors.current[pageIndex]");
+    expect(LIST).toContain("refresh: syncActiveSearches");
+    expect(LIST).toContain("mergeDiscoverLiveStatesIntoGroups");
     expect(LIST).not.toContain("router.refresh()");
-    expect(DASHBOARD).toContain("<DiscoverLiveRefresh active={hasActiveDiscoverWork} />");
+    expect(DASHBOARD).toContain("<DiscoverLiveRefresh active={hasActiveDiscoverWork} items={activityItems} />");
+    expect(DASHBOARD_LIVE).toContain('fetch("/api/discover/live-dashboard"');
+    expect(DASHBOARD_LIVE).not.toContain("router.refresh()");
+  });
+
+  it("does not reload company or people on an active Add More polling tick", () => {
+    const sync = DETAIL.slice(
+      DETAIL.indexOf("const syncDiscoverLiveState"),
+      DETAIL.indexOf("useDiscoverLivePolling({", DETAIL.indexOf("const syncDiscoverLiveState"))
+    );
+    expect(sync).toContain("DISCOVER_SEARCH_LIVE_STATE_QUERY");
+    expect(sync).not.toContain("loadCompany(");
+    expect(sync).not.toContain("loadPeople(");
+    expect(sync).not.toContain("loadDetail(");
+    expect(sync).not.toContain("resetPeopleState(");
+  });
+
+  it("runs the targeted completion reload once per terminal transition", () => {
+    expect(DETAIL).toContain("completedLiveRefreshes.current.has(key)");
+    expect(DETAIL).toContain("completedLiveRefreshes.current.add(key)");
+    expect(DETAIL).toContain("if (refreshCompleted) await refreshCompletedData()");
+    expect(DETAIL).toContain("const pageIndex = peoplePageIndex");
+    expect(DETAIL).toContain("const after = peopleAfterCursors.current[pageIndex] ?? null");
+  });
+
+  it("commits the process mutation's durable status before clearing click feedback", () => {
+    const processHandler = DETAIL.slice(DETAIL.indexOf("const handleProcess"), DETAIL.indexOf("const handleCancel"));
+    expect(processHandler).toContain("isActivelyProcessing(search.status)");
+    expect(processHandler.indexOf("setSearch((current)")).toBeLessThan(processHandler.lastIndexOf("setProcessing(false)"));
+    expect(processHandler).not.toContain("await loadDetail({ category: activeCategory });\n  },");
+  });
+
+  it("updates active Search History rows in place without touching list controls", () => {
+    const sync = LIST.slice(LIST.indexOf("const syncActiveSearches"), LIST.indexOf("useDiscoverLivePolling({"));
+    expect(sync).toContain("mergeDiscoverLiveStatesIntoGroups");
+    expect(sync).not.toContain("setHistoryQuery");
+    expect(sync).not.toContain("setHistoryPageIndex");
+    expect(sync).not.toContain("setSearchesLoading(true)");
   });
 
   it("revalidates on focus and visibility through the existing toast system", () => {
@@ -50,6 +94,8 @@ describe("Discover durable background UI wiring", () => {
     expect(POLLING).toContain('window.removeEventListener("focus", onFocus)');
     expect(NOTIFICATIONS).toContain("useErrorToast()");
     expect(NOTIFICATIONS).toContain("showSuccess(toast.message, { title: toast.title })");
+    expect(NOTIFICATIONS).toContain("dispatchDiscoverCompletedEvent(item)");
+    expect(NOTIFICATIONS).not.toContain("router.refresh()");
     // Toasting never marks the bell read.
     expect(NOTIFICATIONS).toContain("/read`");
     expect(NOTIFICATIONS).not.toContain("showSuccess(toast.message, { title: toast.title });\n            void markOneRead");

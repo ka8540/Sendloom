@@ -18,7 +18,6 @@ import {
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
-import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { buildActivityItems } from "@/components/dashboard/activity-builder";
 import { DiscoverLiveRefresh } from "@/components/dashboard/discover-live-refresh";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
@@ -744,7 +743,6 @@ export default async function OverviewCommandCenter() {
 
   return (
     <div className={styles.page}>
-      <DiscoverLiveRefresh active={hasActiveDiscoverWork} />
       {/* Compact page header: identity on the left, the two primary workspace
           actions on the right. No hero block — the operational summary strip
           below carries the at-a-glance numbers. */}
@@ -884,7 +882,7 @@ export default async function OverviewCommandCenter() {
 
         <aside className={styles.sideColumn}>
           <SendWindowCard combined={userSendWindow} senders={sendWindowSenders} />
-          <ActivityFeed items={activityItems} />
+          <DiscoverLiveRefresh active={hasActiveDiscoverWork} items={activityItems} />
         </aside>
       </div>
 

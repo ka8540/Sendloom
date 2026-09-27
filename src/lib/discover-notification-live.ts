@@ -1,6 +1,22 @@
 import type { AppNotificationItem } from "@/lib/notifications";
 
 export type DiscoverCompletionToast = { title: string; message: string };
+export const DISCOVER_COMPLETED_EVENT = "sendloom:discover-completed";
+
+export type DiscoverCompletedEventDetail = {
+  entityType: string | null;
+  entityId: string | null;
+};
+
+/** Public identifiers only; no company, contact, provider, or evidence data. */
+export function dispatchDiscoverCompletedEvent(item: AppNotificationItem): void {
+  if (typeof window === "undefined" || item.type !== "DISCOVER_SEARCH_COMPLETED") return;
+  window.dispatchEvent(
+    new CustomEvent<DiscoverCompletedEventDetail>(DISCOVER_COMPLETED_EVENT, {
+      detail: { entityType: item.entityType, entityId: item.entityId }
+    })
+  );
+}
 
 /**
  * Notifications this browser has not seen yet. The first page of a session
@@ -42,8 +58,4 @@ export function discoverCompletionToast(item: AppNotificationItem): DiscoverComp
       ? `${company} is ready with ${resultCount} ${resultCount === 1 ? "person" : "people"}.`
       : item.message
   };
-}
-
-export function isDiscoverRefreshRoute(pathname: string): boolean {
-  return pathname === "/workspace" || pathname === "/" || pathname === "/prospects" || pathname.startsWith("/prospects/");
 }

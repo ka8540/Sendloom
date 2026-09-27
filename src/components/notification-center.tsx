@@ -1,7 +1,7 @@
 "use client";
 
 import type { Route } from "next";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   CheckCheck,
@@ -15,8 +15,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useErrorToast } from "@/components/error-toast-provider";
 import {
+  dispatchDiscoverCompletedEvent,
   discoverCompletionToast,
-  isDiscoverRefreshRoute,
   selectNewNotifications
 } from "@/lib/discover-notification-live";
 import type { AppNotificationItem, AppNotificationPage } from "@/lib/notifications";
@@ -49,7 +49,6 @@ function mergeNotificationPages(current: AppNotificationItem[], incoming: AppNot
 
 export function NotificationCenter() {
   const router = useRouter();
-  const pathname = usePathname();
   const { showSuccess } = useErrorToast();
   const rootRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
@@ -93,17 +92,11 @@ export function NotificationCenter() {
         const arrivals = seeded ? [] : selectNewNotifications(page.items, observedIdsRef.current);
         page.items.forEach((item) => observedIdsRef.current.add(item.id));
 
-        let arrived = false;
         for (const item of arrivals) {
           const toast = discoverCompletionToast(item);
           if (!toast) continue;
           showSuccess(toast.message, { title: toast.title });
-          arrived = true;
-        }
-        // Revalidate the server-rendered Discover/dashboard surfaces in place —
-        // never navigate, so filters and scroll position survive.
-        if (arrived && isDiscoverRefreshRoute(pathname)) {
-          router.refresh();
+          dispatchDiscoverCompletedEvent(item);
         }
       }
       setItems((current) => (append ? mergeNotificationPages(current, page.items) : page.items));
@@ -115,7 +108,7 @@ export function NotificationCenter() {
       requestInFlightRef.current = false;
       append ? setLoadingMore(false) : setLoading(false);
     }
-  }, [pathname, router, showSuccess]);
+  }, [showSuccess]);
 
   useEffect(() => {
     void fetchNotifications();

@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DISCOVER_COMPLETED_EVENT,
+  dispatchDiscoverCompletedEvent,
   discoverCompletionToast,
-  isDiscoverRefreshRoute,
   selectNewNotifications
 } from "@/lib/discover-notification-live";
 import type { AppNotificationItem } from "@/lib/notifications";
@@ -26,6 +27,7 @@ function notification(overrides: Partial<AppNotificationItem> = {}): AppNotifica
 }
 
 describe("Discover live notification presentation", () => {
+  afterEach(() => vi.unstubAllGlobals());
   it("uses the requested normal and expansion success copy", () => {
     expect(discoverCompletionToast(notification())).toEqual({
       title: "Discover results ready",
@@ -58,10 +60,22 @@ describe("Discover live notification presentation", () => {
     expect(selectNewNotifications([skewed], observed).map((item) => item.id)).toEqual(["skewed"]);
   });
 
-  it("refreshes only Discover and dashboard routes", () => {
-    expect(isDiscoverRefreshRoute("/prospects")).toBe(true);
-    expect(isDiscoverRefreshRoute("/prospects/search_1")).toBe(true);
-    expect(isDiscoverRefreshRoute("/workspace")).toBe(true);
-    expect(isDiscoverRefreshRoute("/campaigns")).toBe(false);
+  it("dispatches only public completion identifiers without refreshing a route", () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", { dispatchEvent });
+    vi.stubGlobal("CustomEvent", class<T> {
+      type: string;
+      detail: T;
+      constructor(type: string, init: { detail: T }) {
+        this.type = type;
+        this.detail = init.detail;
+      }
+    });
+    dispatchDiscoverCompletedEvent(notification());
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchEvent.mock.calls[0]?.[0]).toMatchObject({
+      type: DISCOVER_COMPLETED_EVENT,
+      detail: { entityType: "ProspectSearch", entityId: "search_1" }
+    });
   });
 });

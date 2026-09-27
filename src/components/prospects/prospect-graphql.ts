@@ -164,6 +164,14 @@ export type DiscoverSearchExpansion = {
   updatedAt: string;
 };
 
+/** Minimal durable state used by the invisible three-second live sync. */
+export type DiscoverSearchLiveState = {
+  id: string;
+  status: ProspectSearchStatus;
+  peopleCount: number;
+  latestExpansion: DiscoverSearchExpansion | null;
+};
+
 export type PositionNode = {
   id: string;
   category: PositionCategory;
@@ -486,6 +494,31 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
   }
 `;
 
+// Deliberately excludes company details, people rows, evidence, positions, and
+// provider data. Active Discover polling must remain an invisible status sync.
+export const DISCOVER_SEARCH_LIVE_STATE_QUERY = /* GraphQL */ `
+  query DiscoverSearchLiveState($id: ID!) {
+    prospectSearch(id: $id) {
+      id
+      status
+      peopleCount
+      latestExpansion {
+        id
+        searchId
+        status
+        requestedCount
+        addedCount
+        totalPeopleCount
+        quotaRemaining
+        exhausted
+        message
+        createdAt
+        updatedAt
+      }
+    }
+  }
+`;
+
 export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
   query CompanyDetail($id: ID!) {
     company(id: $id) {
@@ -673,6 +706,8 @@ export const ADD_MORE_DISCOVER_PEOPLE_MUTATION = /* GraphQL */ `
       quotaRemaining
       exhausted
       message
+      createdAt
+      updatedAt
     }
   }
 `;

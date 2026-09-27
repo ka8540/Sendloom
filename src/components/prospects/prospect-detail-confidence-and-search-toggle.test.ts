@@ -107,9 +107,9 @@ describe("Search this company disclosure (#8-#13, #16)", () => {
   it("the trigger is icon-only at rest: the label reveals on intent, the full name stays accessible", () => {
     // The reveal text is just "Search" — the button never dominates the row.
     expect(COMPANY_SEARCH_TRIGGER_LABEL).toBe("Search");
-    expect(DETAIL_SOURCE).toContain(
-      "<span className={styles.companySearchTriggerLabel}>{COMPANY_SEARCH_TRIGGER_LABEL}</span>"
-    );
+    expect(DETAIL_SOURCE).toContain("<span className={styles.companySearchTriggerLabel}>");
+    expect(DETAIL_SOURCE).toContain("hasActiveSearch ? COMPANY_SEARCH_LOADING_LABEL : COMPANY_SEARCH_TRIGGER_LABEL");
+    expect(DETAIL_SOURCE).toContain("disabled={hasActiveSearch}");
     // Screen readers always get the full name from the button itself.
     expect(DETAIL_SOURCE).toContain("aria-label={COMPANY_SEARCH_TITLE}");
     // The long title is never the visible trigger label.

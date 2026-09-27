@@ -35,11 +35,13 @@ import {
   DELETE_SEARCH_MUTATION,
   DISCOVER_COMPANY_GROUPS_QUERY,
   DISCOVER_QUOTA_QUERY,
+  DISCOVER_SEARCH_LIVE_STATE_QUERY,
   SEARCHES_PAGE_SIZE,
   buildSearchesVariables,
   prospectGraphql,
   type Connection,
   type DiscoverCompanyGroupNode,
+  type DiscoverSearchLiveState,
   type GraphQLResult,
   type DiscoverQuota,
   type DiscoverSuggestion
@@ -59,6 +61,7 @@ import {
   formatQuotaReset,
   groupStatusBadge,
   isActivelyProcessing,
+  mergeDiscoverLiveStatesIntoGroups,
   paginateHistoryGroups,
   resolveGroupOpenTarget,
   resolveHistoryPageAfterDelete,
@@ -204,17 +207,47 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     [matchedSearches, historyPageIndexSafe]
   );
   const hasHistoryQuery = historyQuery.trim().length > 0;
-  const hasActiveDiscoverWork = useMemo(
+  const activeSearchIds = useMemo(
     () =>
-      searches.some((group) =>
-        group.searches.some((entry) => isActivelyProcessing(entry.status))
+      searches.flatMap((group) =>
+        group.searches.filter((entry) => isActivelyProcessing(entry.status)).map((entry) => entry.id)
       ),
     [searches]
   );
+  const completedLiveStates = useRef(new Set<string>());
+  const syncActiveSearches = useCallback(async () => {
+    const ids = activeSearchIds;
+    if (ids.length === 0) return;
+    const results = await Promise.all(
+      ids.map((id) =>
+        prospectGraphql<{ prospectSearch: DiscoverSearchLiveState | null }>(DISCOVER_SEARCH_LIVE_STATE_QUERY, { id })
+      )
+    );
+    const states = results
+      .map((result) => result.data?.prospectSearch ?? null)
+      .filter((state): state is DiscoverSearchLiveState => Boolean(state));
+    if (states.length === 0) return;
+
+    // Merge statuses/counts into the existing rows: the list, query, page, and
+    // scroll position never reset while the background search is active.
+    setSearches((current) => mergeDiscoverLiveStatesIntoGroups(current, states));
+    const completed = states.filter((state) => !isActivelyProcessing(state.status));
+    const unseenCompletion = completed.some((state) => {
+      const key = `${state.id}:${state.status}`;
+      if (completedLiveStates.current.has(key)) return false;
+      completedLiveStates.current.add(key);
+      return true;
+    });
+    if (unseenCompletion) {
+      // One terminal reconciliation provides the exact grouped unique count.
+      // It is silent and leaves all local list controls untouched.
+      await Promise.all([loadSearches({ silent: true }), loadQuota()]);
+    }
+  }, [activeSearchIds, loadQuota, loadSearches]);
 
   useDiscoverLivePolling({
-    active: hasActiveDiscoverWork,
-    refresh: () => loadSearches({ silent: true })
+    active: activeSearchIds.length > 0,
+    refresh: syncActiveSearches
   });
 
   // A changed query always restarts at page 1 so the first matches are visible.

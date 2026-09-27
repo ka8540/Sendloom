@@ -51,7 +51,8 @@ describe("overview activity loader — feed structure is preserved", () => {
     expect(BUILDER).toContain("const ACTIVITY_LIMIT = 7");
     const FEED = readFileSync("src/components/dashboard/activity-feed.tsx", "utf8");
     expect(FEED).toContain("const OVERVIEW_ACTIVITY_LIMIT = 4;");
-    expect((LOADER.match(/<ActivityFeed\b/g) ?? []).length).toBe(1);
+    expect((LOADER.match(/<DiscoverLiveRefresh\b/g) ?? []).length).toBe(1);
+    expect(LOADER).toContain("items={activityItems}");
   });
 
   it("classifies current sequence cards and activity from recipient state", () => {

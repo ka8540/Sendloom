@@ -69,14 +69,14 @@ describe("authenticated notification center", () => {
     expect(CENTER).toContain("page.items.forEach((item) => observedIdsRef.current.add(item.id));");
     // Only paginated reads are exempt, so a refresh page always re-checks.
     expect(CENTER).toContain("if (!append) {");
-    // Toasting never marks the bell read, and only Discover/dashboard routes revalidate.
+    // Toasting never marks the bell read and emits one lightweight local event.
     const arrivalBlock = CENTER.slice(
       CENTER.indexOf("const seeded = !baselineSetRef.current;"),
       CENTER.indexOf("setItems((current)")
     );
     expect(arrivalBlock).toContain("showSuccess(toast.message, { title: toast.title })");
-    expect(arrivalBlock).toContain("if (arrived && isDiscoverRefreshRoute(pathname))");
-    expect(arrivalBlock).toContain("router.refresh()");
+    expect(arrivalBlock).toContain("dispatchDiscoverCompletedEvent(item)");
+    expect(arrivalBlock).not.toContain("router.refresh()");
     expect(arrivalBlock).not.toContain("markOneRead");
     expect(arrivalBlock).not.toContain("read-all");
   });

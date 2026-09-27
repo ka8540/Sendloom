@@ -7,6 +7,7 @@ import type {
   DiscoverCompanyGroupNode,
   DiscoverExpansionStatus,
   DiscoverQuota,
+  DiscoverSearchLiveState,
   EmailDomainEvidenceNode,
   EmailCandidateStatus,
   PatternEvidenceNode,
@@ -552,6 +553,22 @@ export function isActivelyProcessing(status: ProspectSearchStatus): boolean {
   return isProcessingStatus(status) && status !== "DRAFT";
 }
 
+/** Compact, provider-neutral copy for a durable processing stage. */
+export function discoverProcessingStageLabel(status: ProspectSearchStatus): string {
+  switch (status) {
+    case "RESOLVING_COMPANY":
+      return "Resolving company…";
+    case "SEARCHING_PEOPLE":
+      return "Finding people…";
+    case "CLASSIFYING_POSITIONS":
+      return "Organizing roles…";
+    case "INFERRING_EMAIL_PATTERN":
+      return "Preparing results…";
+    default:
+      return "Processing…";
+  }
+}
+
 /**
  * Durable Add More states that mean the SERVER is still working. This — not a
  * click-time useState flag — is what keeps "Adding more people…" true across a
@@ -559,6 +576,38 @@ export function isActivelyProcessing(status: ProspectSearchStatus): boolean {
  */
 export function isActiveDiscoverExpansion(status: DiscoverExpansionStatus | null | undefined): boolean {
   return status === "PENDING" || status === "PROCESSING";
+}
+
+/**
+ * Merge minimal live-state responses into Search History without replacing the
+ * list, toggling its loading state, or touching filter/pagination state.
+ */
+export function mergeDiscoverLiveStatesIntoGroups(
+  groups: DiscoverCompanyGroupNode[],
+  states: readonly DiscoverSearchLiveState[]
+): DiscoverCompanyGroupNode[] {
+  if (states.length === 0) return groups;
+  const byId = new Map(states.map((state) => [state.id, state]));
+  let changed = false;
+  const next = groups.map((group) => {
+    let groupChanged = false;
+    let nextPeopleCount = group.peopleCount;
+    const searches = group.searches.map((entry) => {
+      const live = byId.get(entry.id);
+      if (!live) return entry;
+      groupChanged = true;
+      nextPeopleCount = Math.max(nextPeopleCount, live.peopleCount, live.latestExpansion?.totalPeopleCount ?? 0);
+      return {
+        ...entry,
+        status: live.status,
+        peopleCount: live.peopleCount
+      };
+    });
+    if (!groupChanged) return group;
+    changed = true;
+    return { ...group, peopleCount: nextPeopleCount, searches };
+  });
+  return changed ? next : groups;
 }
 
 // ---------------------------------------------------------------------------
