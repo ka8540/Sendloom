@@ -7,6 +7,7 @@ import type {
   DiscoverCompanyGroupNode,
   DiscoverExpansionStatus,
   DiscoverQuota,
+  DiscoverSearchExpansion,
   DiscoverSearchLiveState,
   EmailDomainEvidenceNode,
   EmailCandidateStatus,
@@ -578,6 +579,45 @@ export function isActiveDiscoverExpansion(status: DiscoverExpansionStatus | null
   return status === "PENDING" || status === "PROCESSING";
 }
 
+export type DiscoverDisplayStatus = ProspectSearchStatus | "PROCESSING";
+
+/**
+ * One shared interpretation of a Discover search for every UI surface.
+ * Terminal base failures win over stale expansion data; otherwise either an
+ * active expansion or an active base-search stage presents as Processing.
+ */
+export function deriveDiscoverSearchUiState(
+  search: Pick<ProspectSearchNode, "status" | "peopleCount"> & {
+    latestExpansion?: Pick<DiscoverSearchExpansion, "status"> | null;
+  }
+): {
+  displayStatus: DiscoverDisplayStatus;
+  isProcessing: boolean;
+  isExpansionActive: boolean;
+} {
+  const baseStatus = effectiveSearchStatus(search);
+  if (baseStatus === "FAILED" || baseStatus === "CANCELED") {
+    return { displayStatus: baseStatus, isProcessing: false, isExpansionActive: false };
+  }
+
+  const isExpansionActive = isActiveDiscoverExpansion(search.latestExpansion?.status);
+  if (isExpansionActive || isActivelyProcessing(baseStatus)) {
+    return { displayStatus: "PROCESSING", isProcessing: true, isExpansionActive };
+  }
+
+  return { displayStatus: baseStatus, isProcessing: false, isExpansionActive: false };
+}
+
+export function discoverSearchStatusBadge(
+  search: Parameters<typeof deriveDiscoverSearchUiState>[0]
+): Badge {
+  const { displayStatus } = deriveDiscoverSearchUiState(search);
+  if (displayStatus === "PROCESSING") {
+    return { label: "Processing", tone: "inferred", hint: "This search is still running." };
+  }
+  return statusBadge(displayStatus);
+}
+
 /**
  * Merge minimal live-state responses into Search History without replacing the
  * list, toggling its loading state, or touching filter/pagination state.
@@ -600,7 +640,8 @@ export function mergeDiscoverLiveStatesIntoGroups(
       return {
         ...entry,
         status: live.status,
-        peopleCount: live.peopleCount
+        peopleCount: live.peopleCount,
+        latestExpansion: live.latestExpansion
       };
     });
     if (!groupChanged) return group;
@@ -625,16 +666,16 @@ export function mergeDiscoverLiveStatesIntoGroups(
  *   5. No results — no child found people, but none failed either.
  *   6. Draft, then Canceled.
  *
- * Callers should pass EFFECTIVE statuses (effectiveSearchStatus) so a legacy
- * zero-result READY child reads as NO_RESULTS here too.
+ * Callers should pass shared DISPLAY statuses so active expansion work and
+ * legacy zero-result READY rows are represented consistently.
  */
-export function groupStatusBadge(statuses: ProspectSearchStatus[]): Badge {
+export function groupStatusBadge(statuses: DiscoverDisplayStatus[]): Badge {
   const active = statuses.filter((status) => status !== "CANCELED");
   const considered = active.length > 0 ? active : statuses;
   if (considered.length === 0) {
     return { label: "Draft", tone: "muted", hint: "No searches yet." };
   }
-  if (considered.some(isActivelyProcessing)) {
+  if (considered.some((status) => status === "PROCESSING" || isActivelyProcessing(status))) {
     return { label: "Processing", tone: "inferred", hint: "A search for this company is still running." };
   }
   const failedCount = considered.filter((status) => status === "FAILED").length;
@@ -654,6 +695,13 @@ export function groupStatusBadge(statuses: ProspectSearchStatus[]): Badge {
     return { label: statusLabel("DRAFT"), tone: "muted", hint: "Draft search — open it to fetch people." };
   }
   return statusBadge("CANCELED");
+}
+
+/** Search History's grouped row badge, derived from the same per-search state as detail. */
+export function discoverGroupStatusBadge(
+  searches: Array<Parameters<typeof deriveDiscoverSearchUiState>[0]>
+): Badge {
+  return groupStatusBadge(searches.map((search) => deriveDiscoverSearchUiState(search).displayStatus));
 }
 
 /**
@@ -707,7 +755,7 @@ export function filterHistoryGroups(
       group.company?.officialDomain,
       ...group.requestedRoles,
       ...(group.locations.length > 0 ? group.locations : ["Any location"]),
-      groupStatusBadge(group.searches.map((search) => effectiveSearchStatus(search))).label,
+      discoverGroupStatusBadge(group.searches).label,
       formatDateTime(group.latestActivityAt)
     ]
       .filter(Boolean)

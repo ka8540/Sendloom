@@ -51,16 +51,15 @@ import {
   PROSPECT_FINDER_TITLE,
   clampPageIndex,
   discoverPerSearchSentence,
+  deriveDiscoverSearchUiState,
+  discoverGroupStatusBadge,
   filterHistoryGroups,
-  effectiveSearchStatus,
   formatDateTime,
   formatFilteredGroupCountLabel,
   formatHistoryShowingLabel,
   formatPageLabel,
   formatQuotaRemaining,
   formatQuotaReset,
-  groupStatusBadge,
-  isActivelyProcessing,
   mergeDiscoverLiveStatesIntoGroups,
   paginateHistoryGroups,
   resolveGroupOpenTarget,
@@ -210,14 +209,20 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const activeSearchIds = useMemo(
     () =>
       searches.flatMap((group) =>
-        group.searches.filter((entry) => isActivelyProcessing(entry.status)).map((entry) => entry.id)
+        group.searches.filter((entry) => deriveDiscoverSearchUiState(entry).isProcessing).map((entry) => entry.id)
       ),
     [searches]
   );
   const completedLiveStates = useRef(new Set<string>());
   const syncActiveSearches = useCallback(async () => {
     const ids = activeSearchIds;
-    if (ids.length === 0) return;
+    if (ids.length === 0) {
+      // Focus/visibility revalidation lets an idle list discover Add More work
+      // started in another tab. This is silent: rows update in place with no
+      // loading state, router refresh, or page flicker.
+      await loadSearches({ silent: true });
+      return;
+    }
     const results = await Promise.all(
       ids.map((id) =>
         prospectGraphql<{ prospectSearch: DiscoverSearchLiveState | null }>(DISCOVER_SEARCH_LIVE_STATE_QUERY, { id })
@@ -231,9 +236,14 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     // Merge statuses/counts into the existing rows: the list, query, page, and
     // scroll position never reset while the background search is active.
     setSearches((current) => mergeDiscoverLiveStatesIntoGroups(current, states));
-    const completed = states.filter((state) => !isActivelyProcessing(state.status));
+    const completed = states.filter((state) => !deriveDiscoverSearchUiState(state).isProcessing);
     const unseenCompletion = completed.some((state) => {
-      const key = `${state.id}:${state.status}`;
+      const key = [
+        state.id,
+        state.status,
+        state.latestExpansion?.id ?? "no-expansion",
+        state.latestExpansion?.status ?? "none"
+      ].join(":");
       if (completedLiveStates.current.has(key)) return false;
       completedLiveStates.current.add(key);
       return true;
@@ -761,9 +771,9 @@ function SearchHistoryTable({
                     {group.peopleCount}
                   </span>
                   <span data-label="Status" data-discover-tour={index === 0 ? "search-status" : undefined}>
-                    {/* Effective statuses: a zero-result child (NO_RESULTS, or a
-                        legacy READY row with nobody) must never read "Ready". */}
-                    <BadgePill badge={groupStatusBadge(group.searches.map((search) => effectiveSearchStatus(search)))} />
+                    {/* Base status and durable Add More status share one UI
+                        derivation, so READY + active expansion is Processing. */}
+                    <BadgePill badge={discoverGroupStatusBadge(group.searches)} />
                   </span>
                   <span className={styles.historyCreatedCell} data-label="Updated">
                     {formatDateTime(group.latestActivityAt)}

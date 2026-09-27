@@ -6,7 +6,12 @@ import {
   DISCOVER_ACTIVE_POLL_INTERVAL_MS
 } from "@/components/prospects/use-discover-live-polling";
 import type { ProspectSearchStatus } from "@/components/prospects/prospect-graphql";
-import { isActiveDiscoverExpansion, isActivelyProcessing } from "@/components/prospects/prospect-view";
+import {
+  deriveDiscoverSearchUiState,
+  discoverGroupStatusBadge,
+  isActiveDiscoverExpansion,
+  isActivelyProcessing
+} from "@/components/prospects/prospect-view";
 
 const DETAIL = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
 const LIST = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
@@ -25,8 +30,9 @@ async function flush() {
 
 describe("Discover durable background UI wiring", () => {
   it("derives Add More loading and disabled state from the latest server expansion", () => {
-    expect(DETAIL).toContain("search?.latestExpansion");
-    expect(DETAIL).toContain("(entry) => isActiveDiscoverExpansion(entry.status)");
+    expect(DETAIL).toContain("[search, ...(company?.searches ?? [])]");
+    expect(DETAIL).toContain("entry.latestExpansion");
+    expect(DETAIL).toContain("deriveDiscoverSearchUiState(entry).isExpansionActive");
     expect(DETAIL).toContain("const addingMore = expanding || Boolean(activeExpansion)");
     expect(DETAIL).toContain("addMoreDisabledReason(quota, addingMore)");
     expect(DETAIL).toContain("addingMore ? ADD_MORE_LOADING_LABEL");
@@ -94,9 +100,23 @@ describe("Discover durable background UI wiring", () => {
   it("updates active Search History rows in place without touching list controls", () => {
     const sync = LIST.slice(LIST.indexOf("const syncActiveSearches"), LIST.indexOf("useDiscoverLivePolling({"));
     expect(sync).toContain("mergeDiscoverLiveStatesIntoGroups");
+    expect(sync).toContain("loadSearches({ silent: true })");
     expect(sync).not.toContain("setHistoryQuery");
     expect(sync).not.toContain("setHistoryPageIndex");
     expect(sync).not.toContain("setSearchesLoading(true)");
+  });
+
+  it("uses the same active expansion state for the detail button and list badge", () => {
+    const node = {
+      status: "READY" as const,
+      peopleCount: 10,
+      latestExpansion: { status: "PROCESSING" as const }
+    };
+
+    expect(deriveDiscoverSearchUiState(node).isExpansionActive).toBe(true);
+    expect(discoverGroupStatusBadge([node]).label).toBe("Processing");
+    expect(DETAIL).toContain("deriveDiscoverSearchUiState(entry).isExpansionActive");
+    expect(LIST).toContain("discoverGroupStatusBadge(group.searches)");
   });
 
   it("revalidates on focus and visibility through the existing toast system", () => {

@@ -130,6 +130,10 @@ export type DiscoverGroupSearchNode = {
   peopleCount: number;
   createdAt: string;
   completedAt: string | null;
+  latestExpansion?: Pick<
+    DiscoverSearchExpansion,
+    "id" | "status" | "addedCount" | "createdAt" | "updatedAt"
+  > | null;
 };
 
 export type DiscoverCompanyGroupNode = {
@@ -444,6 +448,13 @@ export const DISCOVER_COMPANY_GROUPS_QUERY = /* GraphQL */ `
             peopleCount
             createdAt
             completedAt
+            latestExpansion {
+              id
+              status
+              addedCount
+              createdAt
+              updatedAt
+            }
           }
         }
       }

@@ -130,7 +130,8 @@ import {
   companySearchNoResultsMessage,
   companySearchSuccessMessage,
   confidenceBadge,
-  effectiveSearchStatus,
+  deriveDiscoverSearchUiState,
+  discoverSearchStatusBadge,
   isNoResultsSearch,
   isActiveDiscoverExpansion,
   isActivelyProcessing,
@@ -161,7 +162,6 @@ import {
   selectAllMatchingProspects,
   shouldShowAddMore,
   scopeMatchesSelection,
-  statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
   type AddMoreCandidateSearch,
@@ -321,24 +321,31 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const selectedView = resolveSelectedSearchView(search);
   const durableExpansions = useMemo(
     () =>
-      [search?.latestExpansion, ...(company?.searches ?? []).map((entry) => entry.latestExpansion)]
-        .filter((entry): entry is DiscoverSearchExpansion => Boolean(entry))
+      [search, ...(company?.searches ?? [])]
+        .flatMap((entry) =>
+          entry && deriveDiscoverSearchUiState(entry).isExpansionActive && entry.latestExpansion
+            ? [entry.latestExpansion]
+            : []
+        )
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [company?.searches, search?.latestExpansion]
+    [company?.searches, search]
   );
-  const activeExpansion = durableExpansions.find(
-    (entry) => isActiveDiscoverExpansion(entry.status)
-  ) ?? null;
+  const activeExpansion = durableExpansions[0] ?? null;
   const addingMore = expanding || Boolean(activeExpansion);
   const activeLiveTargets = useMemo(() => {
     const targets = new Map<string, ActiveLiveTarget>();
     const include = (entry: {
       id: string;
-      status?: ProspectSearchStatus;
+      status: ProspectSearchStatus;
+      peopleCount: number;
       latestExpansion?: DiscoverSearchExpansion | null;
     }) => {
-      const searchActive = entry.status ? isActivelyProcessing(entry.status) : false;
-      const expansionId = isActiveDiscoverExpansion(entry.latestExpansion?.status)
+      const searchActive = isActivelyProcessing(entry.status);
+      const expansionId = deriveDiscoverSearchUiState({
+        status: entry.status,
+        peopleCount: entry.peopleCount,
+        latestExpansion: entry.latestExpansion
+      }).isExpansionActive
         ? entry.latestExpansion?.id ?? null
         : null;
       if (searchActive || expansionId) {
@@ -1612,9 +1619,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               {roleLabel} · {locationLabel}
             </p>
             <div className={styles.detailHeaderMeta}>
-              {/* Effective status: a legacy zero-result READY row must read
-                  "No results" here, never "Ready". */}
-              <BadgePill badge={statusBadge(effectiveSearchStatus(search))} />
+              {/* Shared status includes both the base search and Add More. */}
+              <BadgePill badge={discoverSearchStatusBadge(search)} />
               <span className={styles.detailHeaderMetaItem}>
                 <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
               </span>
@@ -2793,13 +2799,13 @@ export function StatusCard({
   onProcess: () => void;
   onCancel: () => void;
 }) {
-  // Effective status: a legacy zero-result READY row reads as NO_RESULTS.
+  const uiState = deriveDiscoverSearchUiState(search);
   const noResults = isNoResultsSearch(search);
-  const badge = statusBadge(effectiveSearchStatus(search));
+  const badge = discoverSearchStatusBadge(search);
   const draft = search.status === "DRAFT";
   const failed = search.status === "FAILED";
   const canceled = search.status === "CANCELED";
-  const serverProcessing = isActivelyProcessing(search.status);
+  const serverProcessing = uiState.isProcessing;
   const busy = processing || serverProcessing;
   const processingLabel = discoverProcessingStageLabel(search.status);
   const error = failed ? formatSearchError(search) : null;

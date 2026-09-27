@@ -6,7 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   DiscoverCompanyGroupNode,
+  DiscoverExpansionStatus,
   DiscoverQuota,
+  DiscoverSearchExpansion,
   DiscoverSearchLiveState,
   PersonNode,
   ProspectSearchNode
@@ -56,6 +58,9 @@ import {
   createEmptyProspectSelection,
   discoverPerSearchCopy,
   discoverPerSearchSentence,
+  deriveDiscoverSearchUiState,
+  discoverGroupStatusBadge,
+  discoverSearchStatusBadge,
   discoverProcessingStageLabel,
   emailFormatEvidenceSummary,
   emailStatusBadge,
@@ -161,6 +166,22 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
       peopleCount: 3
     },
     ...overrides
+  };
+}
+
+function expansion(status: DiscoverExpansionStatus): DiscoverSearchExpansion {
+  return {
+    id: "exp-1",
+    searchId: "s1",
+    status,
+    requestedCount: 10,
+    addedCount: status === "READY" ? 10 : 0,
+    totalPeopleCount: status === "READY" ? 13 : 3,
+    quotaRemaining: 3,
+    exhausted: false,
+    message: null,
+    createdAt: "2026-09-26T12:00:00.000Z",
+    updatedAt: "2026-09-26T12:00:01.000Z"
   };
 }
 
@@ -370,6 +391,54 @@ describe("status badges", () => {
   });
 });
 
+describe("shared Discover UI status derivation", () => {
+  it("keeps a normal ready search Ready", () => {
+    const node = search({ status: "READY", latestExpansion: null });
+    expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+      displayStatus: "READY",
+      isProcessing: false,
+      isExpansionActive: false
+    });
+    expect(discoverSearchStatusBadge(node).label).toBe("Ready");
+  });
+
+  it.each(["PENDING", "PROCESSING"] as const)(
+    "shows Processing for a ready search with a %s expansion",
+    (status) => {
+      const node = search({ status: "READY", latestExpansion: expansion(status) });
+      expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+        displayStatus: "PROCESSING",
+        isProcessing: true,
+        isExpansionActive: true
+      });
+      expect(discoverGroupStatusBadge([node]).label).toBe("Processing");
+    }
+  );
+
+  it("shows Processing for an active base search without an expansion", () => {
+    const node = search({ status: "SEARCHING_PEOPLE", latestExpansion: null });
+    expect(deriveDiscoverSearchUiState(node).displayStatus).toBe("PROCESSING");
+    expect(discoverGroupStatusBadge([node]).label).toBe("Processing");
+  });
+
+  it("lets a failed base search win over inconsistent active expansion data", () => {
+    const node = search({ status: "FAILED", latestExpansion: expansion("PROCESSING") });
+    expect(deriveDiscoverSearchUiState(node)).toMatchObject({
+      displayStatus: "FAILED",
+      isProcessing: false,
+      isExpansionActive: false
+    });
+    expect(discoverGroupStatusBadge([node]).label).toBe("Failed");
+  });
+
+  it("returns the list row to Ready after the expansion becomes READY", () => {
+    const active = search({ status: "READY", latestExpansion: expansion("PROCESSING") });
+    const completed = search({ status: "READY", latestExpansion: expansion("READY") });
+    expect(discoverGroupStatusBadge([active]).label).toBe("Processing");
+    expect(discoverGroupStatusBadge([completed]).label).toBe("Ready");
+  });
+});
+
 describe("durable processing status card", () => {
   const renderStatus = (status: ProspectSearchNode["status"], processing = false) => {
     (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -439,8 +508,44 @@ describe("lightweight Search History live-state merge", () => {
       latestExpansion: null
     };
     const merged = mergeDiscoverLiveStatesIntoGroups(groups, [live]);
-    expect(merged[0]).toMatchObject({ peopleCount: 10, searches: [{ status: "READY", peopleCount: 10 }] });
+    expect(merged[0]).toMatchObject({
+      peopleCount: 10,
+      searches: [{ status: "READY", peopleCount: 10, latestExpansion: null }]
+    });
     expect(merged[0].displayName).toBe(groups[0].displayName);
+  });
+
+  it("moves a ready row from Processing back to Ready when Add More completes", () => {
+    const groups: DiscoverCompanyGroupNode[] = [{
+      id: "group-1",
+      displayName: "AT&T",
+      requestedRoles: ["Software Engineer"],
+      locations: ["United States"],
+      peopleCount: 10,
+      latestActivityAt: "2026-09-26T00:00:00.000Z",
+      company: null,
+      searches: [{
+        id: "search-1",
+        requestedTitles: ["Software Engineer"],
+        requestedLocations: ["United States"],
+        status: "READY",
+        peopleCount: 10,
+        createdAt: "2026-09-26T00:00:00.000Z",
+        completedAt: "2026-09-26T00:01:00.000Z",
+        latestExpansion: expansion("PROCESSING")
+      }]
+    }];
+    const live: DiscoverSearchLiveState = {
+      id: "search-1",
+      status: "READY",
+      peopleCount: 20,
+      latestExpansion: expansion("READY")
+    };
+
+    expect(discoverGroupStatusBadge(groups[0].searches).label).toBe("Processing");
+    const merged = mergeDiscoverLiveStatesIntoGroups(groups, [live]);
+    expect(discoverGroupStatusBadge(merged[0].searches).label).toBe("Ready");
+    expect(merged[0].searches[0].latestExpansion?.status).toBe("READY");
   });
 });
 
