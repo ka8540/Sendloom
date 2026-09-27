@@ -195,12 +195,21 @@ export type UpdateCachedEmailFormatParams = {
 };
 
 // Continuation state for an "Add 10 more" expansion: the entry's people (in
-// stable provider order) plus where the provider left off.
+// stable provider order) plus each provider's independent query/page cursor.
 export type DiscoverCacheExpansionState = {
   cacheId: string;
   providerNextPage: number;
   providerPagesFetched: number;
   providerExhausted: boolean;
+  tavilyNextQueryIndex?: number;
+  tavilyQueriesFetched?: number;
+  tavilyExhausted?: boolean;
+  brightNextPage?: number;
+  brightPagesFetched?: number;
+  brightExhausted?: boolean;
+  apifyNextPage?: number;
+  apifyPagesFetched?: number;
+  apifyExhausted?: boolean;
   /** The shared evidence-backed email format stored on the entry. */
   emailFormat: ResolvedEmailFormat;
   people: ResolvedCachePerson[];
@@ -235,7 +244,7 @@ export interface DiscoverCacheExpansionPort {
   /** Atomically append net-new cached people and advance continuation state. */
   appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState>;
   /** Persist provider exhaustion so future expansions stop calling the provider. */
-  markProviderExhausted(fingerprint: string): Promise<void>;
+  markProviderExhausted(fingerprint: string, provider?: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY"): Promise<void>;
   /**
    * Run `fn` while holding the per-fingerprint stampede lock so at most one
    * provider continuation runs for an identical canonical query at a time. The

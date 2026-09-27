@@ -2,7 +2,13 @@ import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
+import {
+  ApifyProfileSearchService,
+  normalizeProfile,
+  type ApifyRunner
+} from "@/services/prospects/apify-profile-search";
+import type { BrightProfileSearchProvider } from "@/services/prospects/brightdata-public-profile-search";
+import type { TavilyProfileSearchProvider } from "@/services/prospects/tavily-public-profile-search";
 import {
   DiscoverSearchCacheService,
   type DiscoverCacheExpansionPort,
@@ -22,6 +28,7 @@ import {
   expansionMessage,
   type ExpansionAuditFn
 } from "@/services/prospects/discover-expansion-service";
+import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discover-people-provider-orchestrator";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { RoleEmbeddingPort } from "@/services/prospects/role-embedding-service";
 import type { RoleSemanticStorePort } from "@/services/prospects/role-semantic-store";
@@ -190,7 +197,7 @@ function seedCompany() {
     officialName: "Apple",
     officialDomain: "apple.com",
     officialWebsiteDomain: "apple.com",
-    linkedinUrl: null,
+    linkedinUrl: "https://www.linkedin.com/company/apple/",
     emailDomain: "apple.com",
     emailDomainConfidence: "HIGH",
     emailPattern: "flast",
@@ -574,6 +581,7 @@ function buildService(opts: {
   batchSize?: number;
   maxProviderPages?: number;
   roleIntelligence?: DiscoverRoleIntelligencePort;
+  providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
   audit?: ExpansionAuditFn;
 } = {}) {
   const runner: ApifyRunner = opts.runner ?? { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
@@ -591,7 +599,8 @@ function buildService(opts: {
     expansionLock: opts.expansionLock ?? makeFakeLock(),
     audit: opts.audit ?? (() => undefined),
     batchSize: opts.batchSize ?? 10,
-    maxProviderPages: opts.maxProviderPages ?? 5
+    maxProviderPages: opts.maxProviderPages ?? 5,
+    providerOrchestrator: opts.providerOrchestrator
   });
   return { service, runner, quota };
 }
@@ -723,10 +732,235 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.searches[0]).toMatchObject({ status: "READY", totalProcessed: 10 });
   });
 
-  it("returns partial unused same-user people without a provider top-up", async () => {
+  it("resumes Add More from stored brightNextPage and can fill the batch across the Bright action", async () => {
     seedCompany();
     seedSearch();
-    seedExistingPeople(14);
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `bright_resume_grant_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const { input, fingerprint } = fingerprintFor();
+    await durable.appendProviderPeople({
+      fingerprint,
+      fingerprintInput: input,
+      company: { name: "Apple", domain: "apple.com", linkedinUrl: "https://www.linkedin.com/company/apple" },
+      emailFormat: {
+        emailDomain: "apple.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [],
+        emailPattern: "flast",
+        patternConfidence: "HIGH",
+        patternEvidence: [],
+        emailFormatReason: null
+      },
+      people: [],
+      nextPage: 4,
+      pagesFetched: 3,
+      exhausted: false,
+      provider: "BRIGHTDATA_GOOGLE"
+    });
+    const startPages: number[] = [];
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async (request) => {
+        startPages.push(request.startPage ?? 1);
+        const count = (request.startPage ?? 1) === 4 ? 6 : 4;
+        const profiles = Array.from({ length: count }, (_, index) => normalizeProfile({
+          id: `bright-resume-${request.startPage}-${index + 1}`,
+          linkedinUrl: `https://www.linkedin.com/in/bright-resume-${request.startPage}-${index + 1}`,
+          fullName: `Bright Resume${request.startPage}${index + 1}`,
+          currentTitle: "Software Engineer",
+          currentCompany: "Apple",
+          location: "United States"
+        })!);
+        return {
+          profiles,
+          nextPage: (request.startPage ?? 1) + 1,
+          exhausted: false,
+          diagnostics: {
+            rawBrightResults: 10,
+            linkedInCandidates: 10,
+            currentEmploymentAccepted: count,
+            formerEmployeeRejected: 0,
+            companyContradictionRejected: 0,
+            companyInsufficientRejected: 10 - count,
+            locationAccepted: count,
+            locationMissing: 0,
+            locationContradictionRejected: 0,
+            duplicateRejected: 0,
+            enrichmentCalls: 0
+          }
+        };
+      })
+    };
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async (titles: readonly string[]) => [...titles]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence,
+      brightMaxPages: 10
+    });
+    const { service } = buildService({
+      cache: durable,
+      runner,
+      roleIntelligence,
+      providerOrchestrator
+    });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "resume-bright-page-four"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(startPages).toEqual([4, 5]);
+    expect(runner.run).not.toHaveBeenCalled();
+    await expect(durable.getExpansionState(fingerprint)).resolves.toMatchObject({
+      brightNextPage: 6,
+      brightPagesFetched: 5,
+      brightExhausted: false
+    });
+  });
+
+  it("resumes Tavily from the stored query index before Bright on Add More", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `tavily_resume_grant_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const { input, fingerprint } = fingerprintFor();
+    await durable.appendProviderPeople({
+      fingerprint,
+      fingerprintInput: input,
+      company: { name: "Apple", domain: "apple.com", linkedinUrl: "https://www.linkedin.com/company/apple" },
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null
+      },
+      people: [],
+      nextPage: 2,
+      pagesFetched: 2,
+      exhausted: false,
+      provider: "TAVILY"
+    });
+    const queries: string[] = [];
+    const tavily: TavilyProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async ({ query }) => {
+        queries.push(query);
+        const profiles = Array.from({ length: 10 }, (_, index) => normalizeProfile({
+          id: `tavily-resume-${index + 1}`,
+          linkedinUrl: `https://www.linkedin.com/in/tavily-resume-${index + 1}`,
+          fullName: `Tavily Resume${index + 1}`,
+          currentTitle: "Backend Engineer",
+          currentCompany: "Apple",
+          location: "United States"
+        })!);
+        return {
+          profiles,
+          diagnostics: {
+            rawTavilyResults: 10,
+            linkedInCandidates: 10,
+            currentEmploymentAccepted: 10,
+            formerEmployeeRejected: 0,
+            companyContradictionRejected: 0,
+            companyInsufficientRejected: 0,
+            locationAccepted: 10,
+            locationMissing: 0,
+            locationContradictionRejected: 0,
+            roleRejected: 0,
+            duplicateRejected: 0,
+            creditsUsed: 1
+          }
+        };
+      })
+    };
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async () => { throw new Error("Bright must not run"); })
+    };
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async () => ["Software Engineer", "Software Developer", "Backend Engineer"]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      tavily,
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence,
+      tavilyMaxQueries: 4
+    });
+    const { service } = buildService({ cache: durable, runner, roleIntelligence, providerOrchestrator });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "resume-tavily-query-two"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain('("Software Developer")');
+    expect(bright.searchProfiles).not.toHaveBeenCalled();
+    await expect(durable.getExpansionState(fingerprint)).resolves.toMatchObject({
+      tavilyNextQueryIndex: 3,
+      tavilyQueriesFetched: 3,
+      tavilyExhausted: false
+    });
+  });
+
+  it("returns the only two unused DB people without a provider top-up", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(12);
     for (let index = 1; index <= 10; index += 1) {
       prisma._state.searchPeople.push({
         id: `grant_initial_${index}`,
@@ -760,9 +994,121 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "partial-local-first"
     });
 
-    expect(result).toMatchObject({ addedCount: 4 });
+    expect(result).toMatchObject({ addedCount: 2 });
     expect(startPages).toEqual([]);
-    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 4, providerCount: 0 });
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 2, providerCount: 0 });
+  });
+
+  it("returns the next 10 from 63 DB people after 10 allocations with no provider", async () => {
+    seedCompany();
+    seedSearch();
+    const cached = cachePeople("durable-63", 63);
+    seedExistingFromCache(cached.slice(0, 10));
+    seedCache(cached);
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "must-not-run", datasetId: "must-not-run", items: [] }))
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "database-63"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 10, providerCount: 0 });
+  });
+
+  it("persists 18 Bright people, allocates 10, then serves the remaining 8 from DB", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `bright-eighteen-grant-${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const brightProfiles = Array.from({ length: 18 }, (_, index) => normalizeProfile({
+      id: `bright-eighteen-${index + 1}`,
+      linkedinUrl: `https://www.linkedin.com/in/bright-eighteen-${index + 1}`,
+      fullName: `Bright Person${index + 1}`,
+      currentTitle: "Software Engineer",
+      currentCompany: "Apple",
+      location: "United States"
+    })!);
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async () => ({
+        profiles: brightProfiles,
+        nextPage: 2,
+        exhausted: false,
+        diagnostics: {
+          rawBrightResults: 18,
+          linkedInCandidates: 18,
+          currentEmploymentAccepted: 18,
+          formerEmployeeRejected: 0,
+          companyContradictionRejected: 0,
+          companyInsufficientRejected: 0,
+          locationAccepted: 18,
+          locationMissing: 0,
+          locationContradictionRejected: 0,
+          duplicateRejected: 0,
+          enrichmentCalls: 0
+        }
+      }))
+    };
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "must-not-run", datasetId: "must-not-run", items: [] }))
+    };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async (titles: readonly string[]) => [...titles]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence
+    });
+    const { service } = buildService({ cache: durable, runner, roleIntelligence, providerOrchestrator });
+
+    const first = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bright-eighteen-first"
+    });
+    expect(first.addedCount).toBe(10);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(18);
+    expect(bright.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(runner.run).not.toHaveBeenCalled();
+
+    const second = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bright-eighteen-second"
+    });
+    expect(second.addedCount).toBe(8);
+    expect(bright.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
   it("materializes 10 unused cached people without calling Apify and consumes one slot (#1, #4, #5, #9, #10)", async () => {

@@ -318,4 +318,83 @@ describe("DiscoverPublicKnowledgeService", () => {
     expect(result.dataset.people).toHaveLength(0);
     expect(result.definitiveEmpty).toBe(true);
   });
+
+  it("keeps mixed provider provenance and continuation independently", async () => {
+    const base = {
+      fingerprint: request().fingerprint,
+      fingerprintInput: request().fingerprintInput,
+      company: request().company,
+      emailFormat: emptyFormat,
+      pagesFetched: 1
+    };
+    await service.appendProviderPeople({
+      ...base,
+      people: [person("tavily-1")],
+      nextPage: 3,
+      exhausted: false,
+      provider: "TAVILY"
+    });
+    await service.appendProviderPeople({
+      ...base,
+      people: [person("bright-1"), person("bright-2")],
+      nextPage: 2,
+      exhausted: false,
+      provider: "BRIGHTDATA_GOOGLE"
+    });
+    const state = await service.appendProviderPeople({
+      ...base,
+      people: [person("apify-1")],
+      nextPage: 4,
+      exhausted: true,
+      provider: "APIFY",
+      providerRunId: "run-mixed",
+      providerDatasetId: "dataset-mixed"
+    });
+
+    expect(state).toMatchObject({
+      tavilyNextQueryIndex: 3,
+      tavilyQueriesFetched: 1,
+      tavilyExhausted: false,
+      brightNextPage: 2,
+      brightPagesFetched: 1,
+      brightExhausted: false,
+      apifyNextPage: 4,
+      apifyPagesFetched: 1,
+      apifyExhausted: true
+    });
+    expect(prisma._state.discoverProviderBatches[0].provider).toBe("MIXED");
+    expect(prisma._state.discoverProviderBatchPeople.map((row) => row.provider)).toEqual([
+      "TAVILY",
+      "BRIGHTDATA_GOOGLE",
+      "BRIGHTDATA_GOOGLE",
+      "APIFY"
+    ]);
+  });
+
+  it("deduplicates one person across Tavily and Bright by canonical LinkedIn identity", async () => {
+    const base = {
+      fingerprint: request().fingerprint,
+      fingerprintInput: request().fingerprintInput,
+      company: request().company,
+      emailFormat: emptyFormat,
+      pagesFetched: 1,
+      exhausted: false
+    };
+    await service.appendProviderPeople({
+      ...base,
+      people: [person("first-id", { linkedinUrl: "https://www.linkedin.com/in/shared-person/" })],
+      nextPage: 1,
+      provider: "TAVILY"
+    });
+    await service.appendProviderPeople({
+      ...base,
+      people: [person("different-source-id", { linkedinUrl: "https://linkedin.com/in/shared-person" })],
+      nextPage: 2,
+      provider: "BRIGHTDATA_GOOGLE"
+    });
+
+    expect(prisma._state.discoverPublicPeople).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatchPeople[0].provider).toBe("TAVILY");
+  });
 });

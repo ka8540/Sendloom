@@ -1,5 +1,6 @@
 import { isPlainDiscoverName } from "@/services/prospects/discover-name-contract";
 import { env } from "@/lib/env";
+import { canonicalizeLinkedinCompanyUrl } from "@/services/prospects/canonical-company";
 import {
   normalizeCompanyName,
   normalizeTitle,
@@ -76,6 +77,13 @@ export type ApifyProfileSearchResult = {
   /** Per-stage ingestion counters (safe counts only, for diagnostics/logging). */
   diagnostics: ApifyIngestionDiagnostics;
 };
+
+export class ApifyCompanyTargetingError extends Error {
+  constructor() {
+    super("A trusted LinkedIn company URL is required before LinkedIn profile discovery can run.");
+    this.name = "ApifyCompanyTargetingError";
+  }
+}
 
 // The shape we actually run the Apify actor with. `currentCompanies` is only
 // included when we resolved a LinkedIn company URL.
@@ -630,9 +638,20 @@ export class ApifyProfileSearchService {
       throw new Error("APIFY_API_TOKEN is not configured.");
     }
 
+    const targetedCompanyUrl = canonicalizeLinkedinCompanyUrl(
+      input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null
+    );
+    if (
+      !targetedCompanyUrl ||
+      input.companyTargeting?.mode !== "LINKEDIN_CURRENT_COMPANY" ||
+      !input.companyTargeting.trusted
+    ) {
+      throw new ApifyCompanyTargetingError();
+    }
+
     const actorInput = buildActorInput({
       companyName: input.companyName,
-      companyLinkedinUrl: input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null,
+      companyLinkedinUrl: targetedCompanyUrl,
       jobTitles: input.jobTitles,
       locations: input.locations,
       maxResults: input.maxResults,
@@ -642,7 +661,6 @@ export class ApifyProfileSearchService {
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
     assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
-    const targetedCompanyUrl = input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null;
     const usedTrustedCurrentCompanyTarget = Boolean(
       input.companyTargeting?.mode === "LINKEDIN_CURRENT_COMPANY" &&
         input.companyTargeting.trusted &&

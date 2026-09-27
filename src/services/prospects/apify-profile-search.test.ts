@@ -506,9 +506,9 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
         runId: "run1",
         datasetId: "ds1",
         items: [
-          { id: "1", firstName: "Jane", lastName: "Doe", headline: "Engineer", currentPosition: [{ companyName: "Apple" }], linkedinUrl: "https://www.linkedin.com/in/jane" },
-          { id: "1", firstName: "Jane", lastName: "Doe", headline: "Engineer", currentPosition: [{ companyName: "Apple" }], linkedinUrl: "https://www.linkedin.com/in/jane" },
-          { id: "2", firstName: "Bob", lastName: "Lee", headline: "Engineer", currentPosition: [{ companyName: "Google" }], linkedinUrl: "https://www.linkedin.com/in/bob" }
+          { id: "1", firstName: "Jane", lastName: "Doe", headline: "Engineer", currentPosition: [{ companyName: "Apple", companyLinkedinUrl: "https://www.linkedin.com/company/apple/" }], linkedinUrl: "https://www.linkedin.com/in/jane" },
+          { id: "1", firstName: "Jane", lastName: "Doe", headline: "Engineer", currentPosition: [{ companyName: "Apple", companyLinkedinUrl: "https://www.linkedin.com/company/apple/" }], linkedinUrl: "https://www.linkedin.com/in/jane" },
+          { id: "2", firstName: "Bob", lastName: "Lee", headline: "Engineer", currentPosition: [{ companyName: "Google", companyLinkedinUrl: "https://www.linkedin.com/company/google/" }], linkedinUrl: "https://www.linkedin.com/in/bob" }
         ]
       }))
     };
@@ -516,6 +516,8 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
     const result = await service.searchProfiles({
       companyName: "Apple",
+      companyLinkedinUrl: "https://www.linkedin.com/company/apple/",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
       jobTitles: ["Engineer"],
       locations: ["United States"],
       maxResults: 25
@@ -541,7 +543,14 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
 
     await expect(
-      service.searchProfiles({ companyName: "Applied Materials", jobTitles: ["Software Engineer"], locations: [], maxResults: 25 })
+      service.searchProfiles({
+        companyName: "Applied Materials",
+        companyLinkedinUrl: "https://www.linkedin.com/company/applied-materials/",
+        companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
+        jobTitles: ["Software Engineer"],
+        locations: [],
+        maxResults: 25
+      })
     ).rejects.toThrow(/free user run limit reached.*Apify plan/i);
   });
 
@@ -552,7 +561,14 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
 
     await expect(
-      service.searchProfiles({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 })
+      service.searchProfiles({
+        companyName: "X",
+        companyLinkedinUrl: "https://www.linkedin.com/company/x/",
+        companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
+        jobTitles: ["a"],
+        locations: [],
+        maxResults: 10
+      })
     ).rejects.toThrow(/did not complete \(status ABORTED\)/i);
   });
 
@@ -562,7 +578,14 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     };
     const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
 
-    const result = await service.searchProfiles({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
+    const result = await service.searchProfiles({
+      companyName: "X",
+      companyLinkedinUrl: "https://www.linkedin.com/company/x/",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
+      jobTitles: ["a"],
+      locations: [],
+      maxResults: 10
+    });
     expect(result.profiles).toHaveLength(0);
     expect(result.totalFound).toBe(0);
   });
@@ -583,6 +606,7 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     const result = await service.searchProfiles({
       companyName: "Example Corp & Co.",
       companyLinkedinUrl: "https://www.linkedin.com/company/example-corp/",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
       jobTitles: ["Software Engineer"],
       locations: ["United States"],
       maxResults: 10
@@ -596,6 +620,20 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
       rejectedByCompany: 0,
       rejectedBySchema: 0
     });
+  });
+
+  it("fails closed before the actor runs when a company-specific search lacks currentCompanies", async () => {
+    const run = vi.fn();
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner: { run } });
+
+    await expect(service.searchProfiles({
+      companyName: "Confluent, Inc.",
+      companyLinkedinUrl: null,
+      jobTitles: ["Recruiter"],
+      locations: ["United States"],
+      maxResults: 25
+    })).rejects.toThrow(/trusted LinkedIn company URL/i);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("reads a stored dataset by dataset id without starting a new run (#repair-37,38)", async () => {
