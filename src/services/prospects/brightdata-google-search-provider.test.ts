@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_DISCOVER_BRIGHTDATA_TIMEOUT_MS } from "@/lib/env";
 import {
+  BRIGHT_RETRY_FALLBACK_RESERVE_MS,
   BrightDataGoogleSearchProvider,
   classifyBrightResponseBody,
   MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE
@@ -108,7 +109,7 @@ describe("BrightDataGoogleSearchProvider", () => {
       requestedLocations: ["United States"]
     });
 
-    expect(MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE).toBe(2);
+    expect(MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE).toBe(3);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(starts).toEqual(["10", "10"]);
     expect(result).toMatchObject({ page: 2, rawOrganicResults: 1, exhausted: false });
@@ -130,10 +131,53 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(logs).not.toContain("api.brightdata.com");
   });
 
+  it("recovers on a third same-page attempt after empty and invalid JSON responses", async () => {
+    const starts: string[] = [];
+    const responses = [
+      new Response("", { status: 200, headers: { "content-type": "application/json" } }),
+      new Response('{"organic":[', { status: 200, headers: { "content-type": "application/json" } }),
+      new Response(JSON.stringify({
+        organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }]
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    ];
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      starts.push(new URL(request.url).searchParams.get("start") ?? "");
+      return responses.shift()!;
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 2, requestedLocations: [] }))
+      .resolves.toMatchObject({ page: 2, rawOrganicResults: 1, exhausted: false });
+
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(starts).toEqual(["10", "10", "10"]);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 2,
+      attempt: 1,
+      reason: "EMPTY_BODY"
+    }));
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 2,
+      attempt: 2,
+      reason: "INVALID_JSON"
+    }));
+  });
+
   it.each([
     ["HTML_BODY", "<html>private provider page</html>", "text/html"],
-    ["INVALID_JSON", '{"organic":[', "application/json"]
-  ] as const)("fails safely after both bounded attempts return %s", async (reason, body, contentType) => {
+    ["INVALID_JSON", '{"organic":[', "application/json"],
+    ["EMPTY_BODY", "", "text/plain"]
+  ] as const)("fails safely after all three bounded attempts return %s", async (reason, body, contentType) => {
     const fetcher = vi.fn(async () => new Response(body, {
       status: 200,
       headers: { "content-type": contentType }
@@ -148,12 +192,19 @@ describe("BrightDataGoogleSearchProvider", () => {
     await expect(provider.search("private search query", { page: 2, requestedLocations: [] }))
       .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "JSON_PARSE" });
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(info).toHaveBeenCalledWith(JSON.stringify({
       event: "BRIGHT_REQUEST_RETRY",
       status: 200,
       page: 2,
       attempt: 1,
+      reason
+    }));
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 2,
+      attempt: 2,
       reason
     }));
     expect(info).toHaveBeenCalledWith(JSON.stringify({
@@ -282,6 +333,49 @@ describe("BrightDataGoogleSearchProvider", () => {
     const logs = info.mock.calls.flat().join(" ");
     expect(logs).not.toContain("private");
     expect(logs).not.toContain("private search query");
+  });
+
+  it("retries a 200 JSON response with no organic array when it has no explicit terminal signal", async () => {
+    const responses = [
+      new Response(JSON.stringify({ general: { query: "private" } }), { status: 200 }),
+      new Response(JSON.stringify({ organic: [] }), { status: 200 })
+    ];
+    const fetcher = vi.fn(async () => responses.shift()!);
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .resolves.toMatchObject({ rawOrganicResults: 0, exhausted: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 1,
+      attempt: 1,
+      reason: "ORGANIC_ARRAY_MISSING"
+    }));
+    expect(info.mock.calls.flat().join(" ")).not.toContain("private");
+  });
+
+  it("does not retry a missing-organic response with an explicit provider error", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: "provider_terminal", message: "private details" }
+    }), { status: 200 }));
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "ORGANIC_ARRAY_MISSING" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.flat().join(" ")).not.toContain("private details");
   });
 
   it("emits only safe structural metadata when a 200 JSON response has no organic", async () => {
@@ -421,7 +515,7 @@ describe("BrightDataGoogleSearchProvider", () => {
       kind: "MALFORMED_RESPONSE",
       stage: "JSON_PARSE"
     }));
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(info.mock.calls.flat().join(" ")).not.toContain("not json");
   });
 
@@ -504,7 +598,7 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(logs).not.toContain("api.brightdata.com");
   });
 
-  it("classifies a second timeout after exactly two bounded attempts", async () => {
+  it("classifies a third timeout after exactly three bounded attempts", async () => {
     const signals: AbortSignal[] = [];
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
@@ -536,12 +630,20 @@ describe("BrightDataGoogleSearchProvider", () => {
       attempt: 1,
       reason: "TIMEOUT"
     }));
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    expect(signals).toHaveLength(2);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: null,
+      page: 1,
+      attempt: 2,
+      reason: "TIMEOUT"
+    }));
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(signals).toHaveLength(3);
     expect(signals[0]).not.toBe(signals[1]);
+    expect(signals[1]).not.toBe(signals[2]);
   });
 
-  it("reports the second attempt's invalid JSON after a first-attempt timeout", async () => {
+  it("succeeds after a timeout and invalid JSON when the third attempt is valid", async () => {
     let attempt = 0;
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       attempt += 1;
@@ -552,7 +654,11 @@ describe("BrightDataGoogleSearchProvider", () => {
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
         });
       }
-      return new Response('{"organic":[', {
+      if (attempt === 2) return new Response('{"organic":[', {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+      return new Response(JSON.stringify({ organic: [] }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
@@ -566,19 +672,48 @@ describe("BrightDataGoogleSearchProvider", () => {
     });
 
     await expect(provider.search("query", { page: 2, requestedLocations: [] }))
-      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "JSON_PARSE" });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+      .resolves.toMatchObject({ page: 2, rawOrganicResults: 0, exhausted: true });
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(info).toHaveBeenCalledWith(JSON.stringify({
-      event: "BRIGHT_REQUEST_FAILED",
+      event: "BRIGHT_REQUEST_RETRY",
       status: 200,
-      kind: "MALFORMED_RESPONSE",
-      stage: "JSON_PARSE"
+      page: 2,
+      attempt: 2,
+      reason: "INVALID_JSON"
     }));
   });
 
-  it("does not start a timeout retry when the parent deadline has too little budget", async () => {
+  it("reports the final timeout after empty, invalid JSON, and timeout attempts", async () => {
+    let attempt = 0;
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      attempt += 1;
+      if (attempt === 1) return new Response("", { status: 200 });
+      if (attempt === 2) return new Response('{"organic":[', { status: 200 });
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error("Expected an attempt signal.");
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      timeoutMs: 5,
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 2, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "TIMEOUT", stage: "TIMEOUT" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not start a third attempt when only the fallback reserve and a sub-minimum window remain", async () => {
+    let now = 10_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
     const fetcher = vi.fn(async () => {
-      throw new DOMException("Timed out", "TimeoutError");
+      now += fetcher.mock.calls.length === 1 ? 1_000 : 85_000;
+      return new Response('{"organic":[', { status: 200, headers: { "content-type": "application/json" } });
     });
     const provider = new BrightDataGoogleSearchProvider({
       enabled: true,
@@ -591,10 +726,38 @@ describe("BrightDataGoogleSearchProvider", () => {
     await expect(provider.search("query", {
       page: 2,
       requestedLocations: [],
-      deadlineAtMs: Date.now() + 1_000
-    })).rejects.toMatchObject({ kind: "TIMEOUT", stage: "TIMEOUT" });
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(info.mock.calls.flat().join(" ")).not.toContain("BRIGHT_REQUEST_RETRY");
+      deadlineAtMs: 130_000
+    })).rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "JSON_PARSE" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(130_000 - now).toBe(BRIGHT_RETRY_FALLBACK_RESERVE_MS + 4_000);
+    expect(info).not.toHaveBeenCalledWith(expect.stringContaining('"attempt":2'));
+    nowSpy.mockRestore();
+  });
+
+  it("caps each attempt timeout so the fallback reserve remains available", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const responses = [
+      new Response("", { status: 200 }),
+      new Response(JSON.stringify({ organic: [] }), { status: 200 })
+    ];
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      timeoutMs: 90_000,
+      fetcher: vi.fn(async () => responses.shift()!) as typeof fetch
+    });
+
+    await provider.search("query", {
+      page: 1,
+      requestedLocations: [],
+      deadlineAtMs: 80_000
+    });
+    expect(BRIGHT_RETRY_FALLBACK_RESERVE_MS).toBe(30_000);
+    expect(timeoutSpy.mock.calls.map(([timeout]) => timeout)).toEqual([40_000, 40_000]);
+    timeoutSpy.mockRestore();
+    nowSpy.mockRestore();
   });
 
   it("does not retry after the parent AbortSignal fires", async () => {
