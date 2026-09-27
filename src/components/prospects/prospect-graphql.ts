@@ -116,6 +116,7 @@ export type ProspectSearchNode = {
   createdAt: string;
   completedAt: string | null;
   company: CompanySummary | null;
+  latestExpansion?: DiscoverSearchExpansion | null;
 };
 
 // One consolidated Search History entry: every search the current user ran for
@@ -159,6 +160,8 @@ export type DiscoverSearchExpansion = {
   quotaRemaining: number;
   exhausted: boolean;
   message: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type PositionNode = {
@@ -209,6 +212,7 @@ export type CompanySearchNode = {
   positionCategories: PositionCategory[];
   peopleCount: number;
   createdAt: string;
+  latestExpansion?: DiscoverSearchExpansion | null;
 };
 
 export type CompanyDetail = {
@@ -464,6 +468,9 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
       exhausted
       createdAt
       completedAt
+      latestExpansion {
+        id searchId status requestedCount addedCount totalPeopleCount quotaRemaining exhausted message createdAt updatedAt
+      }
       company {
         id
         name
@@ -539,6 +546,9 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
+        latestExpansion {
+          id searchId status requestedCount addedCount totalPeopleCount quotaRemaining exhausted message createdAt updatedAt
+        }
       }
     }
   }

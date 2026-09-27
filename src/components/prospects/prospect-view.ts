@@ -5,6 +5,7 @@
 import type {
   ConfidenceLevel,
   DiscoverCompanyGroupNode,
+  DiscoverExpansionStatus,
   DiscoverQuota,
   EmailDomainEvidenceNode,
   EmailCandidateStatus,
@@ -546,14 +547,23 @@ export function isProcessingStatus(status: ProspectSearchStatus): boolean {
   );
 }
 
+/** Actively running (a DRAFT is waiting on the user, not running). */
+export function isActivelyProcessing(status: ProspectSearchStatus): boolean {
+  return isProcessingStatus(status) && status !== "DRAFT";
+}
+
+/**
+ * Durable Add More states that mean the SERVER is still working. This — not a
+ * click-time useState flag — is what keeps "Adding more people…" true across a
+ * refresh, a remount, and a second browser tab.
+ */
+export function isActiveDiscoverExpansion(status: DiscoverExpansionStatus | null | undefined): boolean {
+  return status === "PENDING" || status === "PROCESSING";
+}
+
 // ---------------------------------------------------------------------------
 // Grouped Search History (one entry per company).
 // ---------------------------------------------------------------------------
-
-/** Actively running (a DRAFT is waiting on the user, not running). */
-function isActivelyProcessing(status: ProspectSearchStatus): boolean {
-  return isProcessingStatus(status) && status !== "DRAFT";
-}
 
 /**
  * Derived status for a consolidated company entry, from its child search

@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
 import {
+  createDiscoverExpansionCompletedNotification,
   createDiscoverSearchCompletedNotification,
   createSequenceCompletedNotification,
   listNotificationsForUser,
@@ -36,6 +37,7 @@ function createNotificationDb() {
   let id = 0;
   const notifications: Row[] = [];
   const searches = new Map<string, Row>();
+  const expansions = new Map<string, Row>();
   const allocations: Row[] = [];
   const runs = new Map<string, Row>();
   const senders = new Map<string, Row>();
@@ -115,6 +117,9 @@ function createNotificationDb() {
     prospectSearchPerson: {
       count: async ({ where }: Row) => allocations.filter((row) => matches(row, where)).length
     },
+    discoverSearchExpansion: {
+      findUnique: async ({ where }: Row) => expansions.get(where.id) ?? null
+    },
     campaignRun: {
       findUnique: async ({ where }: Row) => runs.get(where.id) ?? null
     },
@@ -125,7 +130,7 @@ function createNotificationDb() {
 
   return {
     db,
-    state: { notifications, searches, allocations, runs, senders },
+    state: { notifications, searches, expansions, allocations, runs, senders },
     seedNotification(data: Row) {
       return createNotification(data);
     }
@@ -180,6 +185,54 @@ describe("in-app notification creation", () => {
     expect(await createDiscoverSearchCompletedNotification("search_running", fake.db)).toBeNull();
     await createDiscoverSearchCompletedNotification("search_2", fake.db);
     expect(fake.state.notifications.map((row) => row.entityId)).toEqual(["search_2"]);
+  });
+
+  it("creates one safe Add More completion keyed by the durable expansion id", async () => {
+    const fake = createNotificationDb();
+    fake.state.expansions.set("expansion_1", {
+      id: "expansion_1",
+      userId: "user_a",
+      searchId: "search_1",
+      status: "READY",
+      addedCount: 5,
+      search: { requestedCompany: "AT&T" }
+    });
+
+    await createDiscoverExpansionCompletedNotification("expansion_1", fake.db);
+    await createDiscoverExpansionCompletedNotification("expansion_1", fake.db);
+
+    expect(fake.state.notifications).toHaveLength(1);
+    expect(fake.state.notifications[0]).toMatchObject({
+      type: "DISCOVER_SEARCH_COMPLETED",
+      title: "More people are ready",
+      entityType: "DiscoverSearchExpansion",
+      entityId: "expansion_1",
+      dedupeKey: "discover-expansion-completed:expansion_1",
+      metadata: {
+        kind: "DISCOVER_EXPANSION_COMPLETED",
+        expansionId: "expansion_1",
+        searchId: "search_1",
+        addedCount: 5,
+        company: "AT&T"
+      }
+    });
+    expect(fake.state.notifications[0].message).toBe("5 new people were added to AT&T.");
+    expect(JSON.stringify(fake.state.notifications[0])).not.toMatch(/Tavily|Bright Data|Apify|timeout|provider/i);
+  });
+
+  it("does not create Add More success copy when no people were added", async () => {
+    const fake = createNotificationDb();
+    fake.state.expansions.set("expansion_0", {
+      id: "expansion_0",
+      userId: "user_a",
+      searchId: "search_1",
+      status: "READY",
+      addedCount: 0,
+      search: { requestedCompany: "AT&T" }
+    });
+
+    expect(await createDiscoverExpansionCompletedNotification("expansion_0", fake.db)).toBeNull();
+    expect(fake.state.notifications).toHaveLength(0);
   });
 
   it("creates one safe Sequence completion per run with concise counters", async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { after } from "next/server";
 
 import type { User } from "@prisma/client";
 
@@ -18,12 +19,16 @@ export interface GraphQLContext {
   prisma: typeof prisma;
   services: ProspectServices;
   loaders: ProspectLoaders;
+  /** Registers request-independent work with the host runtime. */
+  defer?: (task: () => Promise<void>) => void;
 }
 
 export type BuildContextOptions = {
   /** Allows tests to inject a fully-resolved user and/or mock AI client. */
   userOverride?: User | null;
   aiClient?: AiClient;
+  /** Injectable in tests; production uses Next.js after(). */
+  defer?: (task: () => Promise<void>) => void;
 };
 
 /**
@@ -47,6 +52,7 @@ export async function buildGraphQLContext(options: BuildContextOptions = {}): Pr
     requestId: randomUUID(),
     prisma,
     services: createProspectServices(prisma, options.aiClient),
-    loaders: createLoaders(prisma, effectiveUser?.id ?? "__anonymous__")
+    loaders: createLoaders(prisma, effectiveUser?.id ?? "__anonymous__"),
+    defer: options.defer ?? ((task) => after(task))
   };
 }

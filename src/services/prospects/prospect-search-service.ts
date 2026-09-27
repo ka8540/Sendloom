@@ -131,7 +131,20 @@ export class ProspectError extends Error {
 }
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
+export const ACTIVE_PROSPECT_SEARCH_STATUSES = [
+  "RESOLVING_COMPANY",
+  "SEARCHING_PEOPLE",
+  "CLASSIFYING_POSITIONS",
+  "INFERRING_EMAIL_PATTERN"
+] as const;
+const ACTIVE_PROSPECT_SEARCH_STATUS_SET = new Set<string>(ACTIVE_PROSPECT_SEARCH_STATUSES);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
+/**
+ * Slack past a run's own hard deadline before its durable claim may be stolen.
+ * A host killed mid-`after()` never runs its catch block, so the claim is the
+ * only evidence left; anything older than deadline + grace is provably dead.
+ */
+export const STALE_CLAIM_GRACE_MS = 60_000;
 // Fetch one bounded provider page so a 10-person search targets 10 VALID unique
 // candidates after schema/company/role validation, not merely 10 raw rows.
 const PROVIDER_CANDIDATE_LIMIT = 25;
@@ -289,6 +302,12 @@ export type ProcessSearchOptions = {
   idempotencyKey?: string | null;
 };
 
+export type ProspectSearchStartResult = {
+  search: ProspectSearch;
+  /** True only for the request that atomically moved this search into work. */
+  shouldProcess: boolean;
+};
+
 /** Internal, privacy-safe outcome of one processing run (never returned to the API). */
 type RunPipelineResult = {
   search: ProspectSearch;
@@ -427,6 +446,115 @@ export class ProspectSearchService {
   }
 
   /**
+   * True once an in-flight claim has outlived the pipeline's own hard deadline,
+   * which means the run is dead and its status can never advance on its own.
+   * Recovering costs no data: people, cache, and continuation state are untouched
+   * — only the claim is re-taken by the next conditional updateMany.
+   */
+  private isClaimStale(search: ProspectSearch): boolean {
+    const startedAt = search.lastAttemptStartedAt ? new Date(search.lastAttemptStartedAt).getTime() : 0;
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+      return true;
+    }
+    return this.now().getTime() - startedAt > this.pipelineTimeoutMs + STALE_CLAIM_GRACE_MS;
+  }
+
+  /**
+   * Claim a search durably and return before the provider pipeline begins.
+   * The status transition is conditional on the previously-read state, so two
+   * tabs converge on one processing attempt. processSearch remains the worker
+   * implementation and recognizes the stamped idempotency key as a replay.
+   */
+  async startSearch(
+    userId: string,
+    searchId: string,
+    options: ProcessSearchOptions = {}
+  ): Promise<ProspectSearchStartResult> {
+    let search = await this.requireOwnedSearch(userId, searchId);
+    const requestedTitles = this.asStringArray(search.requestedTitles);
+    const roles = validateDiscoverSearchLabels({ type: "ROLE", values: requestedTitles });
+    if (!roles.ok || roles.values.length === 0) {
+      throw new ProspectError("INVALID_INPUT", roles.ok ? "Enter a job title to search." : roles.message);
+    }
+    const requestedLocations = this.asStringArray(search.requestedLocations);
+    const locations = validateDiscoverSearchLabels({ type: "LOCATION", values: requestedLocations });
+    if (!locations.ok) {
+      throw new ProspectError("INVALID_INPUT", locations.message);
+    }
+
+    const isLegacyZeroResultReady = search.status === "READY" && (search.totalProcessed ?? 0) === 0;
+    if (search.status === "READY" && !isLegacyZeroResultReady) {
+      await runNotificationSideEffect("discover-search-completed", async () => this.notifyCompleted(search.id));
+      return { search, shouldProcess: false };
+    }
+    if (search.status === "CANCELED") {
+      throw new ProspectError("INVALID_STATE", "A CANCELED search cannot be processed.");
+    }
+    if (ACTIVE_PROSPECT_SEARCH_STATUS_SET.has(search.status) && !this.isClaimStale(search)) {
+      return { search, shouldProcess: false };
+    }
+
+    const reservation = await this.discoverQuota({
+      userId,
+      email: options.actorEmail ?? null,
+      searchId: search.id
+    });
+    if (!reservation.allowed) {
+      throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
+    }
+
+    const requestedKey = options.idempotencyKey?.trim() || null;
+    const attemptId = requestedKey ?? randomUUID();
+    const attemptNumber = (search.attemptCount ?? 0) + 1;
+    const previousStatus = search.status;
+    const claimed = await this.prisma.prospectSearch.updateMany({
+      where: { id: search.id, userId, status: previousStatus },
+      data: {
+        status: "RESOLVING_COMPANY",
+        errorCode: null,
+        errorMessage: null,
+        completedAt: null,
+        attemptCount: attemptNumber,
+        lastAttemptId: attemptId,
+        lastAttemptStartedAt: this.now(),
+        lastAttemptCompletedAt: null
+      }
+    });
+    search = await this.requireOwnedSearch(userId, searchId);
+    if (claimed.count === 0) {
+      return { search, shouldProcess: false };
+    }
+
+    await this.safeAudit(previousStatus === "FAILED" ? "discover.retry_started" : "discover.search_started", userId, options.actorEmail, search.id, {
+      attemptId,
+      attemptNumber,
+      previousStatus,
+      background: true
+    });
+    return { search, shouldProcess: true };
+  }
+
+  /** Execute a previously claimed search and guarantee a terminal failure. */
+  async processStartedSearch(userId: string, searchId: string, options: ProcessSearchOptions = {}): Promise<void> {
+    try {
+      await this.processSearch(userId, searchId, options);
+    } catch (error) {
+      const code = error instanceof ProspectError ? error.code : "PROVIDER_ERROR";
+      const message = error instanceof Error ? error.message : "Prospect search failed.";
+      await this.prisma.prospectSearch.updateMany({
+        where: { id: searchId, userId, status: { in: [...ACTIVE_PROSPECT_SEARCH_STATUSES] } },
+        data: {
+          status: "FAILED",
+          errorCode: code,
+          errorMessage: message.slice(0, 500),
+          completedAt: this.now(),
+          lastAttemptCompletedAt: this.now()
+        }
+      });
+    }
+  }
+
+  /**
    * Run the full discovery pipeline for a search. Ownership / not-found errors
    * throw; provider/AI failures are persisted as a FAILED search and returned so
    * the caller can surface a structured failure (status + errorCode).
@@ -514,14 +642,17 @@ export class ProspectSearchService {
           lastAttemptCompletedAt: null
         }
       });
-    }
 
-    await this.safeAudit(isRetry ? "discover.retry_started" : "discover.search_started", userId, options.actorEmail, search.id, {
-      attemptId,
-      attemptNumber,
-      previousStatus,
-      isReplay
-    });
+      // A replay (a network retry, or the deferred half of a startSearch claim
+      // that already stamped this attempt) is not a second attempt, so it gets
+      // no second "started" audit event either.
+      await this.safeAudit(isRetry ? "discover.retry_started" : "discover.search_started", userId, options.actorEmail, search.id, {
+        attemptId,
+        attemptNumber,
+        previousStatus,
+        isReplay
+      });
+    }
 
     const budget = createAiBudget();
     const pipelineAbort = new AbortController();
@@ -628,6 +759,56 @@ export class ProspectSearchService {
    * the company's own name/domain/LinkedIn as resolution anchors so the
    * pipeline materializes into the SAME company — nothing is hardcoded.
    */
+  async startCompanyRoleSearch(
+    userId: string,
+    args: {
+      companyId: string;
+      jobTitle: string;
+      location?: string | null;
+      actorEmail?: string | null;
+      idempotencyKey?: string | null;
+    }
+  ): Promise<ProspectSearchStartResult> {
+    const company = await this.requireOwnedCompany(userId, args.companyId);
+    const validated = validateCompanyRoleSearchInput({ jobTitle: args.jobTitle, location: args.location });
+    if (!validated.ok) {
+      throw new ProspectError("INVALID_INPUT", validated.message);
+    }
+
+    const existingSearches = await this.prisma.prospectSearch.findMany({ where: { userId, companyId: company.id } });
+    const action = resolveCompanyRoleSearchAction({
+      jobTitle: validated.jobTitle,
+      location: validated.location,
+      existingSearches
+    });
+    if (action.kind === "duplicate") {
+      throw new ProspectError("DUPLICATE_ROLE_LOCATION", action.message);
+    }
+
+    let target: ProspectSearch;
+    if (action.kind === "reuse-draft") {
+      target = existingSearches.find((candidate) => candidate.id === action.searchId)!;
+    } else {
+      const created = await this.createSearch(userId, {
+        companyName: company.name,
+        companyDomain: company.officialWebsiteDomain ?? company.officialDomain ?? null,
+        companyLinkedinUrl: company.linkedinUrl ?? null,
+        jobTitles: [validated.jobTitle],
+        locations: validated.location ? [validated.location] : [],
+        maxResults: resolveResultsPerSearch()
+      });
+      target = await this.prisma.prospectSearch.update({
+        where: { id: created.id },
+        data: { companyId: company.id }
+      });
+    }
+
+    return this.startSearch(userId, target.id, {
+      actorEmail: args.actorEmail ?? null,
+      idempotencyKey: args.idempotencyKey ?? null
+    });
+  }
+
   async searchCompanyRole(
     userId: string,
     args: {

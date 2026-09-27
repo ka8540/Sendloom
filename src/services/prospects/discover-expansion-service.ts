@@ -1,9 +1,10 @@
 import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
 import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import { nameStateFields } from "@/services/prospects/discover-name-contract";
-import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
+import { Prisma, type PrismaClient, type ProspectCompany, type ProspectSearch } from "@prisma/client";
 
 import { recordAuditEvent, type RecordAuditEventArgs } from "@/lib/audit";
+import { runNotificationSideEffect } from "@/lib/notifications";
 import {
   formatDiscoverExpansionLimitMessage,
   getDiscoverQuotaStatus,
@@ -44,7 +45,7 @@ import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discove
 import { createAiBudget } from "@/services/prospects/prospect-ai";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 import { normalizeDomain } from "@/services/prospects/prospect-normalization";
-import { ProspectError } from "@/services/prospects/prospect-search-service";
+import { ProspectError, STALE_CLAIM_GRACE_MS } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
 // One Apify page is 25 profiles. A continuation fetch pulls a full page so the
@@ -67,6 +68,11 @@ export type DiscoverExpansionResult = {
   message: string | null;
 };
 
+export type DiscoverExpansionStartResult = DiscoverExpansionResult & {
+  /** True only for the request that won the durable activeSearchId claim. */
+  shouldProcess: boolean;
+};
+
 export type AddMorePeopleInput = {
   userId: string;
   /** Authenticated account email (session-resolved) for the quota exemption. */
@@ -77,6 +83,7 @@ export type AddMorePeopleInput = {
 };
 
 export type ExpansionAuditFn = (args: RecordAuditEventArgs) => Promise<void> | void;
+export type ExpansionCompletionNotificationFn = (expansionId: string) => Promise<void> | void;
 
 export type DiscoverExpansionServiceDeps = {
   prisma: PrismaClient;
@@ -95,6 +102,7 @@ export type DiscoverExpansionServiceDeps = {
   /** Injectable clock + audit sink for tests. */
   now?: () => Date;
   audit?: ExpansionAuditFn;
+  notifyCompleted?: ExpansionCompletionNotificationFn;
   batchSize?: number;
   maxProviderPages?: number;
   providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
@@ -139,6 +147,7 @@ export class DiscoverExpansionService {
   private readonly expansionLock: DiscoverCacheLock;
   private readonly now: () => Date;
   private readonly audit: ExpansionAuditFn;
+  private readonly notifyCompleted: ExpansionCompletionNotificationFn;
   private readonly batchSize: number;
   private readonly maxProviderPages: number;
   private readonly providerOrchestrator: DiscoverPeopleProviderOrchestrator;
@@ -154,6 +163,7 @@ export class DiscoverExpansionService {
     this.expansionLock = deps.expansionLock ?? createRedisCacheLock();
     this.now = deps.now ?? (() => new Date());
     this.audit = deps.audit ?? recordAuditEvent;
+    this.notifyCompleted = deps.notifyCompleted ?? (() => undefined);
     this.batchSize = deps.batchSize ?? resolveExpansionBatchSize();
     this.maxProviderPages = deps.maxProviderPages ?? resolveExpansionMaxProviderPages();
     this.companyResolution = deps.companyResolution;
@@ -162,6 +172,72 @@ export class DiscoverExpansionService {
       roleClassifier: deps.roleClassifier,
       roleIntelligence: this.roleIntelligence
     });
+  }
+
+  /** Persist an Add More request and return before provider work begins. */
+  async startAddMorePeople(input: AddMorePeopleInput): Promise<DiscoverExpansionStartResult> {
+    const { userId, actorEmail, searchId, idempotencyKey } = input;
+    const search = await this.requireOwnedSearch(userId, searchId);
+    if (search.status !== "READY" && search.status !== "NO_RESULTS") {
+      throw new ProspectError("INVALID_STATE", "Only a completed search can add more people.");
+    }
+    if (!search.companyId || asStringArray(search.requestedTitles).length === 0) {
+      throw new ProspectError("INVALID_STATE", "This search cannot add more people.");
+    }
+
+    const replay = await this.findExpansion(searchId, idempotencyKey);
+    if (replay) {
+      return { ...this.toResult(replay, await this.quotaRemaining(userId, actorEmail), replay.exhausted, null), shouldProcess: false };
+    }
+
+    const active = await this.findLiveActiveExpansion(searchId);
+    if (active) {
+      return { ...this.toResult(active, await this.quotaRemaining(userId, actorEmail), active.exhausted, null), shouldProcess: false };
+    }
+
+    try {
+      const expansion = await this.prisma.discoverSearchExpansion.create({
+        data: {
+          searchId,
+          userId,
+          idempotencyKey,
+          activeSearchId: searchId,
+          requestedCount: this.batchSize,
+          status: "PROCESSING"
+        }
+      });
+      return { ...this.toResult(expansion, await this.quotaRemaining(userId, actorEmail), false, null), shouldProcess: true };
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+        throw error;
+      }
+      const winner = (await this.findExpansion(searchId, idempotencyKey)) ?? (await this.findActiveExpansion(searchId));
+      if (!winner) {
+        throw error;
+      }
+      return { ...this.toResult(winner, await this.quotaRemaining(userId, actorEmail), winner.exhausted, null), shouldProcess: false };
+    }
+  }
+
+  /** Run a durable expansion from a request-independent callback. */
+  async processStartedExpansion(input: AddMorePeopleInput, expansionId: string): Promise<void> {
+    try {
+      await this.addMorePeople(input);
+    } catch (error) {
+      await this.prisma.discoverSearchExpansion.updateMany({
+        where: { id: expansionId, status: { in: ["PENDING", "PROCESSING"] } },
+        data: {
+          status: "FAILED",
+          activeSearchId: null,
+          errorCode: "DISCOVER_EXPANSION_FAILED",
+          completedAt: this.now()
+        }
+      });
+      await this.safeAudit("DISCOVER_EXPANSION_FAILED", input.userId, input.actorEmail, input.searchId, {
+        expansionId,
+        errorCode: safeCode(error)
+      });
+    }
   }
 
   async addMorePeople(input: AddMorePeopleInput): Promise<DiscoverExpansionResult> {
@@ -183,6 +259,11 @@ export class DiscoverExpansionService {
     }
     const locations = asStringArray(search.requestedLocations);
 
+    const active = await this.findLiveActiveExpansion(searchId);
+    if (active && active.idempotencyKey !== idempotencyKey) {
+      return this.toResult(active, await this.quotaRemaining(userId, actorEmail), active.exhausted, null);
+    }
+
     // Serialize all expansions for this search: only one active at a time.
     const lockKey = `${EXPANSION_LOCK_PREFIX}:${searchId}`;
     let lockToken: string | null;
@@ -196,8 +277,8 @@ export class DiscoverExpansionService {
       lockUnavailable = true;
     }
     if (!lockToken) {
-      const existing = await this.findExpansion(searchId, idempotencyKey);
-      if (existing && existing.status === "READY") {
+      const existing = (await this.findExpansion(searchId, idempotencyKey)) ?? (await this.findActiveExpansion(searchId));
+      if (existing) {
         return this.toResult(existing, await this.quotaRemaining(userId, actorEmail), existing.exhausted, null);
       }
       throw new ProspectError("DISCOVER_EXPANSION_ALREADY_RUNNING", "This search is already adding more people. Try again in a moment.");
@@ -213,10 +294,17 @@ export class DiscoverExpansionService {
       expansion = expansion
         ? await this.prisma.discoverSearchExpansion.update({
             where: { id: expansion.id },
-            data: { status: "PROCESSING", errorCode: null }
+            data: { status: "PROCESSING", activeSearchId: searchId, errorCode: null, completedAt: null }
           })
         : await this.prisma.discoverSearchExpansion.create({
-            data: { searchId, userId, idempotencyKey, requestedCount: this.batchSize, status: "PROCESSING" }
+            data: {
+              searchId,
+              userId,
+              idempotencyKey,
+              activeSearchId: searchId,
+              requestedCount: this.batchSize,
+              status: "PROCESSING"
+            }
           });
 
       await this.safeAudit("DISCOVER_EXPANSION_STARTED", userId, actorEmail, searchId, {
@@ -316,7 +404,12 @@ export class DiscoverExpansionService {
       if (!reservation.allowed) {
         await this.prisma.discoverSearchExpansion.update({
           where: { id: expansion.id },
-          data: { status: "FAILED", errorCode: "DISCOVER_DAILY_LIMIT_REACHED" }
+          data: {
+            status: "FAILED",
+            activeSearchId: null,
+            errorCode: "DISCOVER_DAILY_LIMIT_REACHED",
+            completedAt: this.now()
+          }
         });
         throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverExpansionLimitMessage(reservation.status));
       }
@@ -354,7 +447,12 @@ export class DiscoverExpansionService {
         // expansion failed, and allow a retry without another quota charge.
         await this.prisma.discoverSearchExpansion.update({
           where: { id: expansion.id },
-          data: { status: "FAILED", errorCode: "DISCOVER_EXPANSION_FAILED" }
+          data: {
+            status: "FAILED",
+            activeSearchId: null,
+            errorCode: "DISCOVER_EXPANSION_FAILED",
+            completedAt: this.now()
+          }
         });
         await this.safeAudit("DISCOVER_EXPANSION_FAILED", userId, actorEmail, searchId, {
           expansionId: expansion.id,
@@ -409,6 +507,10 @@ export class DiscoverExpansionService {
         totalPeopleCount
       });
 
+      if (addedCount > 0) {
+        await runNotificationSideEffect("discover-expansion-completed", async () => this.notifyCompleted(completed.id));
+      }
+
       // Use the remaining count from THIS reservation (no extra quota read).
       return this.toResult(completed, reservation.status.searchesRemaining, resultExhausted, null);
     } finally {
@@ -434,6 +536,45 @@ export class DiscoverExpansionService {
 
   private async findExpansion(searchId: string, idempotencyKey: string) {
     return this.prisma.discoverSearchExpansion.findFirst({ where: { searchId, idempotencyKey } });
+  }
+
+  private async findActiveExpansion(searchId: string) {
+    return this.prisma.discoverSearchExpansion.findFirst({
+      where: { searchId, status: { in: ["PENDING", "PROCESSING"] } },
+      orderBy: { createdAt: "desc" }
+    });
+  }
+
+  /**
+   * The active expansion, or null once its claim has outlived the bounded
+   * provider budget (every page aborts itself at PROVIDER_ACTION_TIMEOUT_MS).
+   * A host killed mid-`after()` never runs its catch block, so a retired claim
+   * is the only way the search can ever accept another Add More. Retiring writes
+   * status only — people, cache, and provider continuation are untouched.
+   */
+  private async findLiveActiveExpansion(searchId: string) {
+    const active = await this.findActiveExpansion(searchId);
+    if (!active) {
+      return null;
+    }
+    const budgetMs = PROVIDER_ACTION_TIMEOUT_MS * this.maxProviderPages + STALE_CLAIM_GRACE_MS;
+    const stampedAt = Math.max(
+      new Date(active.updatedAt).getTime(),
+      new Date(active.createdAt).getTime()
+    );
+    if (Number.isFinite(stampedAt) && this.now().getTime() - stampedAt <= budgetMs) {
+      return active;
+    }
+    await this.prisma.discoverSearchExpansion.updateMany({
+      where: { id: active.id, status: { in: ["PENDING", "PROCESSING"] } },
+      data: {
+        status: "FAILED",
+        activeSearchId: null,
+        errorCode: "DISCOVER_EXPANSION_STALE",
+        completedAt: this.now()
+      }
+    });
+    return null;
   }
 
   private buildFingerprint(company: ProspectCompany, roles: string[], locations: string[]) {
@@ -963,6 +1104,7 @@ export class DiscoverExpansionService {
       where: { id: expansionId },
       data: {
         status: "READY",
+        activeSearchId: null,
         addedCount: data.addedCount,
         cacheCount: data.cacheCount,
         providerCount: data.providerCount,
@@ -993,7 +1135,10 @@ export class DiscoverExpansionService {
     exhausted: boolean,
     message: string | null
   ): DiscoverExpansionResult {
-    const resolvedMessage = message ?? expansionMessage(expansion.addedCount, this.batchSize, exhausted);
+    const resolvedMessage =
+      expansion.status === "PENDING" || expansion.status === "PROCESSING"
+        ? null
+        : message ?? expansionMessage(expansion.addedCount, this.batchSize, exhausted);
     return {
       id: expansion.id,
       searchId: expansion.searchId,

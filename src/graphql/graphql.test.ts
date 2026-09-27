@@ -17,6 +17,7 @@ function makeContext(options: {
   userId?: string;
   authError?: string | null;
   services?: Partial<GraphQLContext["services"]>;
+  defer?: GraphQLContext["defer"];
 }): GraphQLContext {
   const prisma = options.prisma ?? createFakePrisma();
   const userId = options.userId ?? options.user?.id ?? "__anonymous__";
@@ -26,7 +27,8 @@ function makeContext(options: {
     requestId: "test-request",
     prisma: prisma as unknown as PrismaClient,
     services: (options.services ?? {}) as GraphQLContext["services"],
-    loaders: createLoaders(prisma as unknown as PrismaClient, userId)
+    loaders: createLoaders(prisma as unknown as PrismaClient, userId),
+    defer: options.defer
   };
 }
 
@@ -813,6 +815,35 @@ describe("Company email inference API", () => {
 });
 
 describe("Discover quota GraphQL surface", () => {
+  it("returns durable processing state before running normal Discover in the background", async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const startSearch = vi.fn(async () => ({
+      search: { id: "s1", status: "RESOLVING_COMPANY" },
+      shouldProcess: true
+    }));
+    const processStartedSearch = vi.fn(async () => undefined);
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { processProspectSearch(id: "s1", idempotencyKey: "attempt-1") { id status } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        defer: (task) => deferred.push(task),
+        services: {
+          prospectSearch: { startSearch, processStartedSearch } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.processProspectSearch).toEqual({ id: "s1", status: "RESOLVING_COMPANY" });
+    expect(processStartedSearch).not.toHaveBeenCalled();
+    expect(deferred).toHaveLength(1);
+    await deferred[0]();
+    expect(processStartedSearch).toHaveBeenCalledWith("user_A", "s1", {
+      actorEmail: "a@example.com",
+      idempotencyKey: "attempt-1"
+    });
+  });
+
   it("maps a DISCOVER_DAILY_LIMIT_REACHED service error to a safe structured error (#9)", async () => {
     const processSearch = vi.fn(async () => {
       throw new ProspectError(
@@ -930,6 +961,45 @@ describe("Discover failure surface is sanitized", () => {
 });
 
 describe("addMoreDiscoverPeople expansion mutation", () => {
+  it("returns PROCESSING and defers Add More provider work", async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const startAddMorePeople = vi.fn(async () => ({
+      id: "exp_1",
+      searchId: "s1",
+      status: "PROCESSING",
+      requestedCount: 10,
+      addedCount: 0,
+      totalPeopleCount: 10,
+      quotaRemaining: 3,
+      exhausted: false,
+      message: null,
+      shouldProcess: true
+    }));
+    const processStartedExpansion = vi.fn(async () => undefined);
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id status addedCount } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        defer: (task) => deferred.push(task),
+        services: {
+          discoverExpansion: {
+            startAddMorePeople,
+            processStartedExpansion
+          } as unknown as GraphQLContext["services"]["discoverExpansion"]
+        }
+      })
+    });
+
+    expect(result.data?.addMoreDiscoverPeople).toEqual({ id: "exp_1", status: "PROCESSING", addedCount: 0 });
+    expect(processStartedExpansion).not.toHaveBeenCalled();
+    await deferred[0]();
+    expect(processStartedExpansion).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user_A", searchId: "s1", idempotencyKey: "k1" }),
+      "exp_1"
+    );
+  });
+
   it("delegates to the expansion service with the session email, never input", async () => {
     const addMorePeople = vi.fn(async () => ({
       id: "exp_1",

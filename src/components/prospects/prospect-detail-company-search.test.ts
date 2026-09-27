@@ -65,10 +65,11 @@ describe("Search this company section (detail page) (#16-#18)", () => {
     expect(companySearchNoResultsMessage("Human Resource", "United States")).toBe(
       "No new people were found for Human Resource · United States. Nothing was added."
     );
-    // The no-results return occurs before the success-only panel close/field reset.
-    expect(DETAIL_SOURCE.indexOf("if (isNoResultsSearch(created))")).toBeLessThan(
-      DETAIL_SOURCE.indexOf("setCompanySearchOpen(false)", DETAIL_SOURCE.indexOf("const handleSearchCompany"))
-    );
+    // The no-results return occurs before the success-only panel close/field
+    // reset. The earlier processing branch may close the panel while durable
+    // background work runs, so locate the close after the no-results branch.
+    const noResultsAt = DETAIL_SOURCE.indexOf("if (isNoResultsSearch(created))");
+    expect(noResultsAt).toBeLessThan(DETAIL_SOURCE.indexOf("setCompanySearchOpen(false)", noResultsAt));
   });
 
   it("pre-checks duplicates client-side with the SAME shared resolver the server uses (#19)", () => {

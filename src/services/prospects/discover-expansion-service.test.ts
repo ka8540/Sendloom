@@ -26,7 +26,8 @@ import {
   DiscoverExpansionService,
   NO_MORE_PEOPLE_MESSAGE,
   expansionMessage,
-  type ExpansionAuditFn
+  type ExpansionAuditFn,
+  type ExpansionCompletionNotificationFn
 } from "@/services/prospects/discover-expansion-service";
 import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discover-people-provider-orchestrator";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
@@ -583,6 +584,7 @@ function buildService(opts: {
   roleIntelligence?: DiscoverRoleIntelligencePort;
   providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
   audit?: ExpansionAuditFn;
+  notifyCompleted?: ExpansionCompletionNotificationFn;
 } = {}) {
   const runner: ApifyRunner = opts.runner ?? { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -598,6 +600,7 @@ function buildService(opts: {
     quotaStatus: (_userId, email) => quota.status(email),
     expansionLock: opts.expansionLock ?? makeFakeLock(),
     audit: opts.audit ?? (() => undefined),
+    notifyCompleted: opts.notifyCompleted,
     batchSize: opts.batchSize ?? 10,
     maxProviderPages: opts.maxProviderPages ?? 5,
     providerOrchestrator: opts.providerOrchestrator
@@ -610,6 +613,171 @@ beforeEach(() => {
 });
 
 describe("DiscoverExpansionService.addMorePeople", () => {
+  it("reuses one durable PROCESSING expansion across different tab idempotency keys", async () => {
+    seedCompany();
+    seedSearch();
+    const { service, runner, quota } = buildService();
+
+    const first = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "tab-a"
+    });
+    const second = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "tab-b"
+    });
+
+    expect(first).toMatchObject({ status: "PROCESSING", shouldProcess: true });
+    expect(second).toMatchObject({ id: first.id, status: "PROCESSING", shouldProcess: false });
+    expect(prisma._state.expansions).toHaveLength(1);
+    expect(quota.calls).toHaveLength(0);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the winning row when the unique active guard rejects a race", async () => {
+    seedCompany();
+    seedSearch();
+    const { service, runner } = buildService();
+    const winner = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "tab-a"
+    });
+
+    // Simulate a second tab that read the table before the winner committed: the
+    // two pre-create reads miss, so only the unique index can stop the duplicate.
+    const findFirst = prisma.discoverSearchExpansion.findFirst;
+    let reads = 0;
+    prisma.discoverSearchExpansion.findFirst = async (args: Parameters<typeof findFirst>[0]) => {
+      reads += 1;
+      return reads <= 2 ? null : findFirst(args);
+    };
+
+    const loser = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "tab-b"
+    });
+
+    expect(loser).toMatchObject({ id: winner.id, status: "PROCESSING", shouldProcess: false });
+    expect(prisma._state.expansions).toHaveLength(1);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it("retires a crashed expansion once its provider budget has expired", async () => {
+    seedCompany();
+    seedSearch();
+    // An expansion the host never completed: old stamp, still PROCESSING, still
+    // holding the one activeSearchId slot.
+    prisma._state.expansions.push({
+      id: "expansion_crashed",
+      searchId: SEARCH_ID,
+      userId: USER_ID,
+      idempotencyKey: "crashed",
+      activeSearchId: SEARCH_ID,
+      requestedCount: 10,
+      addedCount: 0,
+      cacheCount: 0,
+      providerCount: 0,
+      totalPeopleCount: 10,
+      quotaReserved: false,
+      exhausted: false,
+      status: "PROCESSING",
+      errorCode: null,
+      createdAt: new Date(Date.now() - 400_000),
+      updatedAt: new Date(Date.now() - 400_000),
+      completedAt: null
+    });
+
+    const { service } = buildService({ maxProviderPages: 1 });
+    const started = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "fresh"
+    });
+
+    expect(started.shouldProcess).toBe(true);
+    const crashed = prisma._state.expansions.find((row) => row.id === "expansion_crashed")!;
+    expect(crashed.status).toBe("FAILED");
+    expect(crashed.activeSearchId).toBeNull();
+    // The new request owns the slot and nothing was erased.
+    expect(prisma._state.searches[0].totalProcessed).toBe(10);
+  });
+
+  it("runs a claimed expansion in the background to READY and notifies once", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache(cachePeople("cache", 20));
+    const quota = makeQuotaReserver();
+    const notified: string[] = [];
+    const { service } = buildService({ quota, notifyCompleted: (id) => void notified.push(id) });
+
+    const started = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bg"
+    });
+    expect(started).toMatchObject({ status: "PROCESSING", shouldProcess: true });
+    expect(notified).toEqual([]);
+
+    await service.processStartedExpansion(
+      { userId: USER_ID, actorEmail: "u@example.com", searchId: SEARCH_ID, idempotencyKey: "bg" },
+      started.id
+    );
+
+    const row = prisma._state.expansions[0];
+    expect(row.status).toBe("READY");
+    expect(row.addedCount).toBe(10);
+    expect(row.activeSearchId).toBeNull();
+    expect(notified).toEqual([started.id]);
+    expect(quota.consumed.size).toBe(1);
+  });
+
+  it("never leaves a claimed expansion stuck in PROCESSING when the worker throws", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache([], { providerNextPage: 2 }); // no cache surplus → must call provider
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => {
+        throw new Error("Apify exploded");
+      })
+    };
+    const notified: string[] = [];
+    const { service } = buildService({ runner, notifyCompleted: (id) => void notified.push(id) });
+
+    const started = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bg-fail"
+    });
+
+    await expect(
+      service.processStartedExpansion(
+        { userId: USER_ID, actorEmail: "u@example.com", searchId: SEARCH_ID, idempotencyKey: "bg-fail" },
+        started.id
+      )
+    ).resolves.toBeUndefined();
+
+    const row = prisma._state.expansions[0];
+    expect(row.status).toBe("FAILED");
+    expect(row.activeSearchId).toBeNull();
+    expect(row.errorCode).not.toMatch(/Apify|Tavily|Bright/i);
+    expect(notified).toEqual([]);
+    // Existing people survive; only the expansion failed.
+    expect(prisma._state.people).toHaveLength(10);
+  });
+
   it("uses a partial permanent-DB remainder first, then allows one provider page on the next Add More", async () => {
     seedCompany();
     seedSearch();

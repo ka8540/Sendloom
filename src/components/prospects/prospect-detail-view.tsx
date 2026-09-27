@@ -129,6 +129,8 @@ import {
   confidenceBadge,
   effectiveSearchStatus,
   isNoResultsSearch,
+  isActiveDiscoverExpansion,
+  isActivelyProcessing,
   createEmptyProspectSelection,
   deriveDiscoverQualitySummary,
   describeQualitySummary,
@@ -182,6 +184,7 @@ import {
   type ReviewIntent
 } from "@/components/prospects/prospects-shared";
 import { useManual } from "@/components/manual/ManualProvider";
+import { useDiscoverLivePolling } from "@/components/prospects/use-discover-live-polling";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
@@ -306,6 +309,21 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
   const selectedView = resolveSelectedSearchView(search);
+  const durableExpansions = useMemo(
+    () =>
+      [search?.latestExpansion, ...(company?.searches ?? []).map((entry) => entry.latestExpansion)]
+        .filter((entry): entry is DiscoverSearchExpansion => Boolean(entry))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [company?.searches, search?.latestExpansion]
+  );
+  const activeExpansion = durableExpansions.find(
+    (entry) => isActiveDiscoverExpansion(entry.status)
+  ) ?? null;
+  const addingMore = expanding || Boolean(activeExpansion);
+  const hasActiveSearch = Boolean(
+    (search && isActivelyProcessing(search.status)) ||
+      company?.searches.some((entry) => isActivelyProcessing(entry.status))
+  );
 
   const { manual: discoverManual, isOpen: manualOpen, openManualStage, isStageComplete } = useManual();
   const autoTourStagesRef = useRef<Set<string>>(new Set());
@@ -405,12 +423,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // Preserves the active category/location on a silent refresh (keeps the
   // current view).
   const loadDetail = useCallback(
-    async (options: { category?: PositionCategory | null; location?: string | null; search?: string | null } = {}) => {
+    async (options: {
+      category?: PositionCategory | null;
+      location?: string | null;
+      search?: string | null;
+      silent?: boolean;
+    } = {}) => {
       const category = options.category ?? null;
       const location = options.location ?? null;
       const textSearch = options.search ?? null;
       const req = ++searchReq.current;
-      setSearchLoading(true);
+      if (!options.silent) setSearchLoading(true);
       const result = await prospectGraphql<{ prospectSearch: ProspectSearchNode | null }>(PROSPECT_SEARCH_BY_ID_QUERY, {
         id: searchId
       });
@@ -446,6 +469,33 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     },
     [loadCompany, loadPeople, resetPeopleState, searchId]
   );
+
+  useDiscoverLivePolling({
+    active: hasActiveSearch || Boolean(activeExpansion),
+    refresh: async () => {
+      await Promise.all([
+        loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery, silent: true }),
+        loadQuota()
+      ]);
+    }
+  });
+
+  const observedActiveExpansions = useRef(new Set<string>());
+  useEffect(() => {
+    for (const expansion of durableExpansions) {
+      if (isActiveDiscoverExpansion(expansion.status)) {
+        observedActiveExpansions.current.add(expansion.id);
+        continue;
+      }
+      if (!observedActiveExpansions.current.delete(expansion.id)) continue;
+      setExpanding(false);
+      if (expansion.status === "READY" && expansion.addedCount === 0) {
+        setNoMorePeopleOpen(true);
+      } else if (expansion.status === "FAILED") {
+        setActionError("We couldn't add more people right now. Please try again.");
+      }
+    }
+  }, [durableExpansions]);
 
   useEffect(() => {
     // Never carry another company's correction editors, drafts, selection, or
@@ -765,7 +815,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       !search ||
       (search.status !== "READY" && search.status !== "NO_RESULTS") ||
       !search.company ||
-      expanding ||
+      addingMore ||
       !targetSearchId
     ) {
       return;
@@ -784,19 +834,27 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       ADD_MORE_DISCOVER_PEOPLE_MUTATION,
       { searchId: targetSearchId, idempotencyKey }
     );
-    setExpanding(false);
     void loadQuota();
 
     if (result.disabled) {
+      setExpanding(false);
       setDisabled(true);
       return;
     }
     if (result.error || !result.data) {
+      setExpanding(false);
       setActionError(result.error ?? "Could not add more people. Please try again.");
       return;
     }
 
     const expansion = result.data.addMoreDiscoverPeople;
+    if (isActiveDiscoverExpansion(expansion.status)) {
+      observedActiveExpansions.current.add(expansion.id);
+      await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery, silent: true });
+      setExpanding(false);
+      return;
+    }
+    setExpanding(false);
     // Added nobody → centered dialog, and the button stays exactly where it is.
     // Exhaustion is never mirrored into visibility: re-running a dry search is a
     // free server no-op that simply re-opens this dialog.
@@ -820,7 +878,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       });
     }
     await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
-  }, [activeCategory, activeLocation, expanding, loadCompany, loadDetail, loadPeople, loadQuota, peopleQuery, search]);
+  }, [activeCategory, activeLocation, addingMore, loadCompany, loadDetail, loadPeople, loadQuota, peopleQuery, search]);
 
   // Disclosure for the "Search this company" panel. Opening is a plain toggle;
   // closing hands focus back to the header trigger so keyboard users are never
@@ -916,6 +974,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       return;
     }
     const created = result.data.searchCompanyRole;
+    if (isActivelyProcessing(created.status)) {
+      setCompanySearchOpen(false);
+      setCompanyRoleTitle("");
+      setCompanyRoleLocation("");
+      await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery, silent: true });
+      return;
+    }
     if (created.status === "FAILED") {
       setCompanySearchNotice({ tone: "error", message: formatSearchError(created).message });
       await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
@@ -1107,7 +1172,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       status: search.status,
       canSearchAgain: canSearchCompanyAgain(company ?? search.company)
     });
-  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
+  const addMoreDisabled = addMoreDisabledReason(quota, addingMore);
 
   // The grouped company's child searches (this user's only). Falls back to the
   // routed search so a company payload without siblings still targets itself.
@@ -1519,7 +1584,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <StatusCard
           search={search}
           quota={quota}
-          processing={selectedView === "no-results" ? expanding : processing}
+          processing={selectedView === "no-results" ? addingMore : processing}
           onProcess={selectedView === "no-results" ? handleRequestAddMore : handleProcess}
           onCancel={handleCancel}
         />
@@ -1667,15 +1732,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                         onClick={handleRequestAddMore}
                         disabled={addMoreDisabled !== null}
                         title={addMoreDisabled ?? undefined}
-                        aria-label={ADD_MORE_PEOPLE_LABEL}
+                        aria-label={addingMore ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_LABEL}
                         aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
                       >
-                        {expanding ? (
+                        {addingMore ? (
                           <LoaderCircle className={styles.spin} aria-hidden="true" />
                         ) : (
                           <UserPlus aria-hidden="true" />
                         )}
-                        <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
+                        <span>{addingMore ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
                       </button>
                       {addMoreDisabled === null && (
                         <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
@@ -1854,7 +1919,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         open={showAddMoreDialog}
         peopleCount={company?.peopleCount ?? search.peopleCount ?? 0}
         quota={quota}
-        expanding={expanding}
+        expanding={addingMore}
         target={addMoreTarget}
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}

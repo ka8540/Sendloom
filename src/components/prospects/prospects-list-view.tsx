@@ -58,6 +58,7 @@ import {
   formatQuotaRemaining,
   formatQuotaReset,
   groupStatusBadge,
+  isActivelyProcessing,
   paginateHistoryGroups,
   resolveGroupOpenTarget,
   resolveHistoryPageAfterDelete,
@@ -74,6 +75,7 @@ import {
   type CreateForm
 } from "@/components/prospects/prospects-shared";
 import { useManual } from "@/components/manual/ManualProvider";
+import { useDiscoverLivePolling } from "@/components/prospects/use-discover-live-polling";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 // Conservative shape check before forwarding a picked company's domain to the
@@ -148,9 +150,9 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
 
   // Walks the connection to the end so `searches` always holds the user's whole
   // history. Uses the existing query/cursor contract — no new backend surface.
-  const loadSearches = useCallback(async () => {
+  const loadSearches = useCallback(async (options: { silent?: boolean } = {}) => {
     const req = ++searchesReq.current;
-    setSearchesLoading(true);
+    if (!options.silent) setSearchesLoading(true);
     setSearchesError(null);
     const collected: DiscoverCompanyGroupNode[] = [];
     let after: string | null = null;
@@ -202,6 +204,18 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     [matchedSearches, historyPageIndexSafe]
   );
   const hasHistoryQuery = historyQuery.trim().length > 0;
+  const hasActiveDiscoverWork = useMemo(
+    () =>
+      searches.some((group) =>
+        group.searches.some((entry) => isActivelyProcessing(entry.status))
+      ),
+    [searches]
+  );
+
+  useDiscoverLivePolling({
+    active: hasActiveDiscoverWork,
+    refresh: () => loadSearches({ silent: true })
+  });
 
   // A changed query always restarts at page 1 so the first matches are visible.
   const handleHistoryQueryChange = useCallback((value: string) => {

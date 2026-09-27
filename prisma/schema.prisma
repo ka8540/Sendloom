@@ -1145,6 +1145,11 @@ model DiscoverSearchExpansion {
   searchId         String
   userId           String
   idempotencyKey   String
+  // Equals searchId only while this row is PENDING/PROCESSING, then becomes
+  // null on READY/FAILED. Because PostgreSQL allows multiple nulls in a unique
+  // index, this is a durable cross-tab guard for exactly one active expansion
+  // per search without restricting completed expansion history.
+  activeSearchId   String?   @unique
   requestedCount   Int       @default(10)
   addedCount       Int       @default(0)
   cacheCount       Int       @default(0)

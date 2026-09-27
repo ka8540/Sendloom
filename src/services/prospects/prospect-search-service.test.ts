@@ -413,6 +413,117 @@ beforeEach(() => {
 });
 
 describe("ProspectSearchService pipeline", () => {
+  it("claims durable processing state before provider work and reuses the active claim", async () => {
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);
+    const created = await service.createSearch(USER_ID, VALIDATED);
+
+    const first = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "tab-a"
+    });
+    const second = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "tab-b"
+    });
+
+    expect(first).toMatchObject({ shouldProcess: true, search: { status: "RESOLVING_COMPANY" } });
+    expect(second).toMatchObject({ shouldProcess: false, search: { id: created.id, status: "RESOLVING_COMPANY" } });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("drives a claimed search to READY from the deferred, request-independent run", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-1",
+      datasetId: "ds-1",
+      items: [
+        targetedCompanyProfile("apple-eng", "Software Engineer", "Apple", "https://www.linkedin.com/company/apple")
+      ]
+    }));
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);
+    const created = await service.createSearch(USER_ID, VALIDATED);
+
+    const started = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "bg-ready"
+    });
+    expect(started.shouldProcess).toBe(true);
+
+    await service.processStartedSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "bg-ready"
+    });
+
+    const row = prisma._state.searches.find((candidate) => candidate.id === created.id)!;
+    expect(row.status).toBe("READY");
+    expect(row.attemptCount).toBe(1); // claimed once, never double-counted
+    expect(row.lastAttemptId).toBe("bg-ready");
+  });
+
+  it("never leaves a claimed search stuck in an active status when the deferred run throws", async () => {
+    let quotaCalls = 0;
+    const flakyQuota: DiscoverQuotaReserver = async (params) => {
+      quotaCalls += 1;
+      // The claim reserves fine; the deferred run loses Redis and throws before
+      // the pipeline's own try/catch can persist FAILED.
+      return quotaCalls === 1 ? allowAllQuota(params) : { allowed: false, status: quotaStatus(4, 4) };
+    };
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES, undefined, flakyQuota);
+    const created = await service.createSearch(USER_ID, VALIDATED);
+
+    const started = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "bg-fail"
+    });
+    expect(started.shouldProcess).toBe(true);
+
+    await expect(
+      service.processStartedSearch(USER_ID, created.id, {
+        actorEmail: "u@example.com",
+        idempotencyKey: "bg-fail"
+      })
+    ).resolves.toBeUndefined();
+
+    const row = prisma._state.searches.find((candidate) => candidate.id === created.id)!;
+    expect(row.status).toBe("FAILED");
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("re-claims a claim that outlived the pipeline deadline instead of polling it forever", async () => {
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);
+    const created = await service.createSearch(USER_ID, VALIDATED);
+
+    const first = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "crashed"
+    });
+    expect(first.shouldProcess).toBe(true);
+
+    // The host died mid-run: the claim is orphaned well past its deadline.
+    prisma._state.searches.find((candidate) => candidate.id === created.id)!.lastAttemptStartedAt =
+      new Date(Date.now() - 200_000);
+
+    const retried = await service.startSearch(USER_ID, created.id, {
+      actorEmail: "u@example.com",
+      idempotencyKey: "fresh"
+    });
+    expect(retried.shouldProcess).toBe(true);
+    expect(prisma._state.searches.find((candidate) => candidate.id === created.id)!.lastAttemptId).toBe("fresh");
+  });
+
+  it("leaves a live claim alone while it is still inside the deadline", async () => {
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);
+    const created = await service.createSearch(USER_ID, VALIDATED);
+
+    await service.startSearch(USER_ID, created.id, { actorEmail: "u@example.com", idempotencyKey: "live" });
+    const second = await service.startSearch(USER_ID, created.id, { actorEmail: "u@example.com", idempotencyKey: "other" });
+    expect(second.shouldProcess).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed create input before any ProspectSearch write", async () => {
     const run = vi.fn<ApifyRunner["run"]>();
     const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);

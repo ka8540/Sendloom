@@ -6,6 +6,10 @@ import { createProspectYoga, resolveGraphiqlEnabled } from "@/graphql/server";
 // statically cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Discover pipelines enforce a 120-second internal deadline. Give after()
+// enough host lifetime for cleanup, terminal status persistence, and the
+// idempotent completion notification without tying work to the browser socket.
+export const maxDuration = 180;
 
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("cookie");

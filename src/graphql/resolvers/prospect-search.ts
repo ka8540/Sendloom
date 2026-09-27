@@ -14,6 +14,7 @@ import {
   type DiscoverCompanyGroupNode
 } from "@/services/prospects/discover-company-groups";
 import { validateCompanyRoleSearchInput } from "@/services/prospects/discover-company-role-search";
+import { expansionMessage, resolveExpansionBatchSize } from "@/services/prospects/discover-expansion-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import {
   buildTrustedDiscoverLabelPool,
@@ -184,6 +185,21 @@ export const prospectSearchMutations = {
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input email can never grant the exemption.
+      if (context.defer) {
+        const started = await context.services.prospectSearch.startSearch(user.id, args.id, {
+          actorEmail: user.email,
+          idempotencyKey: args.idempotencyKey ?? null
+        });
+        if (started.shouldProcess) {
+          context.defer(() =>
+            context.services.prospectSearch.processStartedSearch(user.id, started.search.id, {
+              actorEmail: user.email,
+              idempotencyKey: args.idempotencyKey ?? null
+            })
+          );
+        }
+        return started.search;
+      }
       return await context.services.prospectSearch.processSearch(user.id, args.id, {
         actorEmail: user.email,
         idempotencyKey: args.idempotencyKey ?? null
@@ -245,6 +261,24 @@ export const prospectSearchMutations = {
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input can never grant the exemption.
+      if (context.defer) {
+        const started = await context.services.prospectSearch.startCompanyRoleSearch(user.id, {
+          companyId: args.companyId,
+          jobTitle: validated.jobTitle,
+          location: validated.location,
+          actorEmail: user.email,
+          idempotencyKey: idempotencyKey || null
+        });
+        if (started.shouldProcess) {
+          context.defer(() =>
+            context.services.prospectSearch.processStartedSearch(user.id, started.search.id, {
+              actorEmail: user.email,
+              idempotencyKey: idempotencyKey || null
+            })
+          );
+        }
+        return started.search;
+      }
       return await context.services.prospectSearch.searchCompanyRole(user.id, {
         companyId: args.companyId,
         jobTitle: validated.jobTitle,
@@ -270,6 +304,19 @@ export const prospectSearchMutations = {
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input can never grant the exemption.
+      if (context.defer) {
+        const input = {
+          userId: user.id,
+          actorEmail: user.email,
+          searchId: args.searchId,
+          idempotencyKey
+        };
+        const started = await context.services.discoverExpansion.startAddMorePeople(input);
+        if (started.shouldProcess) {
+          context.defer(() => context.services.discoverExpansion.processStartedExpansion(input, started.id));
+        }
+        return started;
+      }
       return await context.services.discoverExpansion.addMorePeople({
         userId: user.id,
         actorEmail: user.email,
@@ -349,6 +396,12 @@ export const ProspectSearch = {
     });
     return [...new Set(positions.map((position) => coercePositionCategory(position.category)))].sort();
   },
+  latestExpansion(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
+    return context.prisma.discoverSearchExpansion.findFirst({
+      where: { searchId: parent.id, userId: parent.userId },
+      orderBy: { createdAt: "desc" }
+    });
+  },
   /**
    * Whether no more unique people can be added to this search. True only when the
    * shared provider results for this canonical query are exhausted AND this
@@ -388,5 +441,33 @@ export const ProspectSearch = {
     });
     const known = new PersonIdentitySet(userPeople);
     return cachePeople.every((person) => known.has(person));
+  }
+};
+
+type DiscoverExpansionParent = {
+  status: string;
+  userId?: string;
+  addedCount: number;
+  exhausted: boolean;
+  quotaRemaining?: number;
+  message?: string | null;
+};
+
+export const DiscoverSearchExpansion = {
+  async quotaRemaining(parent: DiscoverExpansionParent, _args: unknown, context: GraphQLContext) {
+    if (typeof parent.quotaRemaining === "number") {
+      return parent.quotaRemaining;
+    }
+    const user = requireUser(context);
+    return (await getDiscoverQuotaStatus(user.id, user.email)).searchesRemaining;
+  },
+  message(parent: DiscoverExpansionParent) {
+    if (typeof parent.message === "string") {
+      return parent.message;
+    }
+    if (parent.status === "PENDING" || parent.status === "PROCESSING") {
+      return null;
+    }
+    return expansionMessage(parent.addedCount, resolveExpansionBatchSize(), parent.exhausted);
   }
 };
