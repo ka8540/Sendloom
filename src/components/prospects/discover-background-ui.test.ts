@@ -78,6 +78,19 @@ describe("Discover durable background UI wiring", () => {
     expect(processHandler).not.toContain("await loadDetail({ category: activeCategory });\n  },");
   });
 
+  it("installs the Add More expansion before clearing click feedback", () => {
+    const addMoreHandler = DETAIL.slice(DETAIL.indexOf("const handleAddMore"), DETAIL.indexOf("const handleExport"));
+    const activeBranch = addMoreHandler.slice(
+      addMoreHandler.indexOf("if (isActiveDiscoverExpansion(expansion.status))"),
+      addMoreHandler.indexOf("// Added nobody")
+    );
+    const clearClickFeedback = activeBranch.lastIndexOf("setExpanding(false)");
+
+    expect(clearClickFeedback).toBeGreaterThan(activeBranch.indexOf("setSearch((current)"));
+    expect(clearClickFeedback).toBeGreaterThan(activeBranch.indexOf("setCompany((current)"));
+    expect(DETAIL).toContain("const addingMore = expanding || Boolean(activeExpansion)");
+  });
+
   it("updates active Search History rows in place without touching list controls", () => {
     const sync = LIST.slice(LIST.indexOf("const syncActiveSearches"), LIST.indexOf("useDiscoverLivePolling({"));
     expect(sync).toContain("mergeDiscoverLiveStatesIntoGroups");

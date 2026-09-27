@@ -66,6 +66,8 @@ export type DiscoverExpansionResult = {
   quotaRemaining: number;
   exhausted: boolean;
   message: string | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
 export type DiscoverExpansionStartResult = DiscoverExpansionResult & {
@@ -1130,6 +1132,8 @@ export class DiscoverExpansionService {
       addedCount: number;
       totalPeopleCount: number;
       exhausted: boolean;
+      createdAt: Date;
+      updatedAt: Date;
     },
     quotaRemaining: number,
     exhausted: boolean,
@@ -1148,7 +1152,9 @@ export class DiscoverExpansionService {
       totalPeopleCount: expansion.totalPeopleCount,
       quotaRemaining,
       exhausted,
-      message: resolvedMessage
+      message: resolvedMessage,
+      createdAt: expansion.createdAt,
+      updatedAt: expansion.updatedAt
     };
   }
 

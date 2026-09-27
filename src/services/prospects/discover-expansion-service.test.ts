@@ -630,10 +630,24 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       searchId: SEARCH_ID,
       idempotencyKey: "tab-b"
     });
+    const replay = await service.startAddMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "tab-a"
+    });
 
     expect(first).toMatchObject({ status: "PROCESSING", shouldProcess: true });
     expect(second).toMatchObject({ id: first.id, status: "PROCESSING", shouldProcess: false });
+    expect(replay).toMatchObject({ id: first.id, status: "PROCESSING", shouldProcess: false });
     expect(prisma._state.expansions).toHaveLength(1);
+    const durable = prisma._state.expansions[0];
+    expect(first.createdAt).toEqual(durable.createdAt);
+    expect(first.updatedAt).toEqual(durable.updatedAt);
+    expect(second.createdAt).toEqual(durable.createdAt);
+    expect(second.updatedAt).toEqual(durable.updatedAt);
+    expect(replay.createdAt).toEqual(durable.createdAt);
+    expect(replay.updatedAt).toEqual(durable.updatedAt);
     expect(quota.calls).toHaveLength(0);
     expect(runner.run).not.toHaveBeenCalled();
   });
@@ -666,6 +680,8 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(loser).toMatchObject({ id: winner.id, status: "PROCESSING", shouldProcess: false });
+    expect(loser.createdAt).toEqual(winner.createdAt);
+    expect(loser.updatedAt).toEqual(winner.updatedAt);
     expect(prisma._state.expansions).toHaveLength(1);
     expect(runner.run).not.toHaveBeenCalled();
   });
@@ -740,6 +756,16 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(row.activeSearchId).toBeNull();
     expect(notified).toEqual([started.id]);
     expect(quota.consumed.size).toBe(1);
+
+    const replay = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bg"
+    });
+    expect(replay).toMatchObject({ id: row.id, status: "READY", addedCount: 10 });
+    expect(replay.createdAt).toEqual(row.createdAt);
+    expect(replay.updatedAt).toEqual(row.updatedAt);
   });
 
   it("never leaves a claimed expansion stuck in PROCESSING when the worker throws", async () => {
@@ -1677,6 +1703,8 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     const result = await service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "ex1" });
     expect(result.addedCount).toBe(0);
     expect(result.exhausted).toBe(true);
+    expect(result.createdAt).toEqual(prisma._state.expansions[0].createdAt);
+    expect(result.updatedAt).toEqual(prisma._state.expansions[0].updatedAt);
     expect(quota.consumed.size).toBe(1);
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
     expect(cacheRow?.providerExhausted).toBe(true);
@@ -1685,6 +1713,8 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     const second = await service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "ex2" });
     expect(second.addedCount).toBe(0);
     expect(second.exhausted).toBe(true);
+    expect(second.createdAt).toEqual(prisma._state.expansions[1].createdAt);
+    expect(second.updatedAt).toEqual(prisma._state.expansions[1].updatedAt);
     expect(quota.consumed.size).toBe(1); // unchanged
   });
 

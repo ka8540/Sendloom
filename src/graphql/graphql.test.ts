@@ -963,6 +963,8 @@ describe("Discover failure surface is sanitized", () => {
 describe("addMoreDiscoverPeople expansion mutation", () => {
   it("returns PROCESSING and defers Add More provider work", async () => {
     const deferred: Array<() => Promise<void>> = [];
+    const createdAt = new Date("2026-09-26T12:00:00.000Z");
+    const updatedAt = new Date("2026-09-26T12:00:01.000Z");
     const startAddMorePeople = vi.fn(async () => ({
       id: "exp_1",
       searchId: "s1",
@@ -973,12 +975,14 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
       quotaRemaining: 3,
       exhausted: false,
       message: null,
+      createdAt,
+      updatedAt,
       shouldProcess: true
     }));
     const processStartedExpansion = vi.fn(async () => undefined);
     const result = await graphql({
       schema: prospectSchema,
-      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id status addedCount } }`,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id status addedCount createdAt updatedAt } }`,
       contextValue: makeContext({
         user: FAKE_USER,
         defer: (task) => deferred.push(task),
@@ -991,7 +995,14 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
       })
     });
 
-    expect(result.data?.addMoreDiscoverPeople).toEqual({ id: "exp_1", status: "PROCESSING", addedCount: 0 });
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.addMoreDiscoverPeople).toEqual({
+      id: "exp_1",
+      status: "PROCESSING",
+      addedCount: 0,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString()
+    });
     expect(processStartedExpansion).not.toHaveBeenCalled();
     await deferred[0]();
     expect(processStartedExpansion).toHaveBeenCalledWith(
