@@ -64,6 +64,10 @@ type ProviderBatchRow = {
   providerPagesFetched: number;
   providerExhausted: boolean;
   provider?: string;
+  providerChainVersion?: number;
+  firecrawlNextQueryIndex?: number;
+  firecrawlQueriesFetched?: number;
+  firecrawlExhausted?: boolean;
   tavilyNextQueryIndex?: number;
   tavilyQueriesFetched?: number;
   tavilyExhausted?: boolean;
@@ -195,6 +199,10 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
       providerNextPage: batch.providerNextPage,
       providerPagesFetched: batch.providerPagesFetched,
       providerExhausted: batch.providerExhausted,
+      providerChainVersion: batch.providerChainVersion ?? 1,
+      firecrawlNextQueryIndex: batch.firecrawlNextQueryIndex ?? 0,
+      firecrawlQueriesFetched: batch.firecrawlQueriesFetched ?? 0,
+      firecrawlExhausted: batch.firecrawlExhausted ?? false,
       tavilyNextQueryIndex: batch.tavilyNextQueryIndex ?? 0,
       tavilyQueriesFetched: batch.tavilyQueriesFetched ?? 0,
       tavilyExhausted: batch.tavilyExhausted ?? false,
@@ -216,7 +224,6 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
   async appendProviderPeople(
     params: AppendProviderPeopleParams
   ): Promise<DiscoverCacheExpansionState> {
-    const prisma = this.prisma as any;
     const now = this.now();
     const companyDomain = normalizeDomain(params.company.domain);
     const companyLinkedinSlug = normalizeLinkedinCompanySlug(params.company.linkedinUrl);
@@ -225,145 +232,160 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     const dedupe = new PersonIdentitySet();
     const people = params.people.filter((person) => dedupe.addIfNew(person)).map(sanitizePerson);
 
-    const existingBatch = (await prisma.discoverProviderBatch.findUnique({
-      where: { intentHash: params.fingerprint }
-    })) as ProviderBatchRow | null;
-    const tavilyExhausted = provider === "TAVILY"
-      ? params.exhausted
-      : existingBatch?.tavilyExhausted ?? false;
-    const brightExhausted = provider === "BRIGHTDATA_GOOGLE"
-      ? params.exhausted
-      : existingBatch?.brightExhausted ?? false;
-    const apifyExhausted = provider === "APIFY"
-      ? params.exhausted
-      : existingBatch?.apifyExhausted ?? existingBatch?.providerExhausted ?? false;
-    const allAttemptedProvidersExhausted = tavilyExhausted && brightExhausted && apifyExhausted;
-    const batch = (await prisma.discoverProviderBatch.upsert({
-      where: { intentHash: params.fingerprint },
-      create: {
-        intentHash: params.fingerprint,
-        companyCanonicalKey: canonicalKey,
-        companyName: params.company.name,
-        companyDomain,
-        companyLinkedinSlug,
-        normalizedRoles: params.fingerprintInput.roles,
-        normalizedLocations: params.fingerprintInput.locations,
-        provider,
-        providerRunId: params.providerRunId ?? null,
-        providerDatasetId: params.providerDatasetId ?? null,
-        providerNextPage: params.nextPage,
-        providerPagesFetched: params.pagesFetched,
-        providerExhausted: allAttemptedProvidersExhausted,
-        tavilyNextQueryIndex: provider === "TAVILY" ? params.nextPage : 0,
-        tavilyQueriesFetched: provider === "TAVILY" ? params.pagesFetched : 0,
-        tavilyExhausted: provider === "TAVILY" ? params.exhausted : false,
-        brightNextPage: provider === "BRIGHTDATA_GOOGLE" ? params.nextPage : 1,
-        brightPagesFetched: provider === "BRIGHTDATA_GOOGLE" ? params.pagesFetched : 0,
-        brightExhausted: provider === "BRIGHTDATA_GOOGLE" ? params.exhausted : false,
-        apifyNextPage: provider === "APIFY" ? params.nextPage : 1,
-        apifyPagesFetched: provider === "APIFY" ? params.pagesFetched : 0,
-        apifyExhausted: provider === "APIFY" ? params.exhausted : false,
-        lastProviderFetchAt: now
-      },
-      update: {
-        companyCanonicalKey: canonicalKey,
-        companyName: params.company.name,
-        companyDomain,
-        companyLinkedinSlug,
-        normalizedRoles: params.fingerprintInput.roles,
-        normalizedLocations: params.fingerprintInput.locations,
-        provider: existingBatch?.provider && existingBatch.provider !== provider ? "MIXED" : provider,
-        providerRunId: params.providerRunId ?? undefined,
-        providerDatasetId: params.providerDatasetId ?? undefined,
-        providerNextPage: params.nextPage,
-        providerPagesFetched: (existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
-        providerExhausted: allAttemptedProvidersExhausted,
-        ...(provider === "TAVILY"
-          ? {
-              tavilyNextQueryIndex: params.nextPage,
-              tavilyQueriesFetched: (existingBatch?.tavilyQueriesFetched ?? 0) + params.pagesFetched,
-              tavilyExhausted: params.exhausted
-            }
-          : provider === "BRIGHTDATA_GOOGLE"
-          ? {
-              brightNextPage: params.nextPage,
-              brightPagesFetched: (existingBatch?.brightPagesFetched ?? 0) + params.pagesFetched,
-              brightExhausted: params.exhausted
-            }
-          : {
-              apifyNextPage: params.nextPage,
-              apifyPagesFetched: (existingBatch?.apifyPagesFetched ?? existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
-              apifyExhausted: params.exhausted
-            }),
-        lastProviderFetchAt: now
-      }
-    })) as ProviderBatchRow;
-
-    const existingCompanyPeople = (await prisma.discoverPublicPerson.findMany({
-      where: { companyCanonicalKey: canonicalKey }
-    })) as PublicPersonRow[];
-    const bySourceId = new Map(existingCompanyPeople.map((person) => [person.sourceProfileId, person]));
-    const byLinkedin = new Map(
-      existingCompanyPeople
-        .filter((person) => person.normalizedLinkedinUrl)
-        .map((person) => [person.normalizedLinkedinUrl as string, person])
-    );
-    const persisted: PublicPersonRow[] = [];
     let createdCount = 0;
-    for (const person of people) {
-      const normalizedLinkedinUrl = normalizeLinkedinProfileUrl(person.linkedinUrl);
-      const existing = bySourceId.get(person.sourceProfileId) ?? byLinkedin.get(normalizedLinkedinUrl);
-      const common = {
-        companyCanonicalKey: canonicalKey,
-        companyDomain,
-        companyLinkedinSlug,
-        sourceProfileId: person.sourceProfileId,
-        linkedinUrl: person.linkedinUrl,
-        normalizedLinkedinUrl,
-        firstName: person.firstName,
-        lastName: person.lastName,
-        fullName: person.fullName,
-        sourceName: person.sourceName ?? null,
-        nameNormalization: person.nameNormalization ?? null,
-        currentTitle: person.currentTitle,
-        normalizedTitle: person.normalizedTitle,
-        positionCategory: person.positionCategory,
-        location: person.location,
-        country: person.country,
-        state: person.state,
-        city: person.city,
-        lastSeenAt: now
-      };
-      const row = existing
-        ? await prisma.discoverPublicPerson.update({
-            where: { id: existing.id },
-            data: { ...common, sourceProfileId: existing.sourceProfileId }
-          })
-        : await prisma.discoverPublicPerson.create({
-            data: { ...common, firstSeenAt: now }
-          });
-      if (!existing) createdCount += 1;
-      persisted.push(row as PublicPersonRow);
-      bySourceId.set(person.sourceProfileId, row as PublicPersonRow);
-      if (normalizedLinkedinUrl) byLinkedin.set(normalizedLinkedinUrl, row as PublicPersonRow);
-    }
+    // People, membership, and cursor commit together. Failed ingestion cannot consume a query.
+    await this.prisma.$transaction(async (tx) => {
+      const prisma = tx as any;
+      const existingBatch = (await prisma.discoverProviderBatch.findUnique({
+        where: { intentHash: params.fingerprint }
+      })) as ProviderBatchRow | null;
+      const firecrawlExhausted = provider === "FIRECRAWL" ? params.exhausted : existingBatch?.firecrawlExhausted ?? false;
+      const firecrawlComplete = existingBatch?.providerChainVersion === 1 || firecrawlExhausted;
+      const tavilyExhausted = provider === "TAVILY"
+        ? params.exhausted
+        : existingBatch?.tavilyExhausted ?? false;
+      const brightExhausted = provider === "BRIGHTDATA_GOOGLE"
+        ? params.exhausted
+        : existingBatch?.brightExhausted ?? false;
+      const apifyExhausted = provider === "APIFY"
+        ? params.exhausted
+        : existingBatch?.apifyExhausted ?? existingBatch?.providerExhausted ?? false;
+      const allAttemptedProvidersExhausted = firecrawlComplete && tavilyExhausted && brightExhausted && apifyExhausted;
+      const batch = (await prisma.discoverProviderBatch.upsert({
+        where: { intentHash: params.fingerprint },
+        create: {
+          intentHash: params.fingerprint,
+          companyCanonicalKey: canonicalKey,
+          companyName: params.company.name,
+          companyDomain,
+          companyLinkedinSlug,
+          normalizedRoles: params.fingerprintInput.roles,
+          normalizedLocations: params.fingerprintInput.locations,
+          provider,
+          providerRunId: params.providerRunId ?? null,
+          providerDatasetId: params.providerDatasetId ?? null,
+          providerNextPage: params.nextPage,
+          providerPagesFetched: params.pagesFetched,
+          providerExhausted: allAttemptedProvidersExhausted,
+          providerChainVersion: 2,
+          firecrawlNextQueryIndex: provider === "FIRECRAWL" ? params.nextPage : 0,
+          firecrawlQueriesFetched: provider === "FIRECRAWL" ? params.pagesFetched : 0,
+          firecrawlExhausted: provider === "FIRECRAWL" ? params.exhausted : false,
+          tavilyNextQueryIndex: provider === "TAVILY" ? params.nextPage : 0,
+          tavilyQueriesFetched: provider === "TAVILY" ? params.pagesFetched : 0,
+          tavilyExhausted: provider === "TAVILY" ? params.exhausted : false,
+          brightNextPage: provider === "BRIGHTDATA_GOOGLE" ? params.nextPage : 1,
+          brightPagesFetched: provider === "BRIGHTDATA_GOOGLE" ? params.pagesFetched : 0,
+          brightExhausted: provider === "BRIGHTDATA_GOOGLE" ? params.exhausted : false,
+          apifyNextPage: provider === "APIFY" ? params.nextPage : 1,
+          apifyPagesFetched: provider === "APIFY" ? params.pagesFetched : 0,
+          apifyExhausted: provider === "APIFY" ? params.exhausted : false,
+          lastProviderFetchAt: now
+        },
+        update: {
+          companyCanonicalKey: canonicalKey,
+          companyName: params.company.name,
+          companyDomain,
+          companyLinkedinSlug,
+          normalizedRoles: params.fingerprintInput.roles,
+          normalizedLocations: params.fingerprintInput.locations,
+          provider: existingBatch?.provider && existingBatch.provider !== provider ? "MIXED" : provider,
+          providerRunId: params.providerRunId ?? undefined,
+          providerDatasetId: params.providerDatasetId ?? undefined,
+          providerNextPage: params.nextPage,
+          providerPagesFetched: (existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
+          providerExhausted: allAttemptedProvidersExhausted,
+          ...(provider === "FIRECRAWL"
+            ? { firecrawlNextQueryIndex: params.nextPage,
+                firecrawlQueriesFetched: (existingBatch?.firecrawlQueriesFetched ?? 0) + params.pagesFetched,
+                firecrawlExhausted: params.exhausted }
+            : provider === "TAVILY"
+            ? {
+                tavilyNextQueryIndex: params.nextPage,
+                tavilyQueriesFetched: (existingBatch?.tavilyQueriesFetched ?? 0) + params.pagesFetched,
+                tavilyExhausted: params.exhausted
+              }
+            : provider === "BRIGHTDATA_GOOGLE"
+            ? {
+                brightNextPage: params.nextPage,
+                brightPagesFetched: (existingBatch?.brightPagesFetched ?? 0) + params.pagesFetched,
+                brightExhausted: params.exhausted
+              }
+            : {
+                apifyNextPage: params.nextPage,
+                apifyPagesFetched: (existingBatch?.apifyPagesFetched ?? existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
+                apifyExhausted: params.exhausted
+              }),
+          lastProviderFetchAt: now
+        }
+      })) as ProviderBatchRow;
 
-    const existingLinks = (await prisma.discoverProviderBatchPerson.findMany({
-      where: { batchId: batch.id }
-    })) as BatchPersonRow[];
-    const linked = new Set(existingLinks.map((link) => link.publicPersonId));
-    let sortIndex = existingLinks.reduce(
-      (maximum, link) => Math.max(maximum, link.providerSortIndex + 1),
-      0
-    );
-    for (const person of persisted) {
-      if (linked.has(person.id)) continue;
-      await prisma.discoverProviderBatchPerson.create({
-        data: { batchId: batch.id, publicPersonId: person.id, providerSortIndex: sortIndex, provider }
-      });
-      linked.add(person.id);
-      sortIndex += 1;
-    }
+      const existingCompanyPeople = (await prisma.discoverPublicPerson.findMany({
+        where: { companyCanonicalKey: canonicalKey }
+      })) as PublicPersonRow[];
+      const bySourceId = new Map(existingCompanyPeople.map((person) => [person.sourceProfileId, person]));
+      const byLinkedin = new Map(
+        existingCompanyPeople
+          .filter((person) => person.normalizedLinkedinUrl)
+          .map((person) => [person.normalizedLinkedinUrl as string, person])
+      );
+      const persisted: PublicPersonRow[] = [];
+      for (const person of people) {
+        const normalizedLinkedinUrl = normalizeLinkedinProfileUrl(person.linkedinUrl);
+        const existing = bySourceId.get(person.sourceProfileId) ?? byLinkedin.get(normalizedLinkedinUrl);
+        const common = {
+          companyCanonicalKey: canonicalKey,
+          companyDomain,
+          companyLinkedinSlug,
+          sourceProfileId: person.sourceProfileId,
+          linkedinUrl: person.linkedinUrl,
+          normalizedLinkedinUrl,
+          firstName: person.firstName,
+          lastName: person.lastName,
+          fullName: person.fullName,
+          sourceName: person.sourceName ?? null,
+          nameNormalization: person.nameNormalization ?? null,
+          currentTitle: person.currentTitle,
+          normalizedTitle: person.normalizedTitle,
+          positionCategory: person.positionCategory,
+          location: person.location,
+          country: person.country,
+          state: person.state,
+          city: person.city,
+          lastSeenAt: now
+        };
+        const row = existing
+          ? await prisma.discoverPublicPerson.update({
+              where: { id: existing.id },
+              data: { ...common, sourceProfileId: existing.sourceProfileId }
+            })
+          : await prisma.discoverPublicPerson.create({
+              data: { ...common, firstSeenAt: now }
+            });
+        if (!existing) createdCount += 1;
+        persisted.push(row as PublicPersonRow);
+        bySourceId.set(person.sourceProfileId, row as PublicPersonRow);
+        if (normalizedLinkedinUrl) byLinkedin.set(normalizedLinkedinUrl, row as PublicPersonRow);
+      }
+
+      const existingLinks = (await prisma.discoverProviderBatchPerson.findMany({
+        where: { batchId: batch.id }
+      })) as BatchPersonRow[];
+      const linked = new Set(existingLinks.map((link) => link.publicPersonId));
+      let sortIndex = existingLinks.reduce(
+        (maximum, link) => Math.max(maximum, link.providerSortIndex + 1),
+        0
+      );
+      for (const person of persisted) {
+        if (linked.has(person.id)) continue;
+        await prisma.discoverProviderBatchPerson.create({
+          data: { batchId: batch.id, publicPersonId: person.id, providerSortIndex: sortIndex, provider }
+        });
+        linked.add(person.id);
+        sortIndex += 1;
+      }
+
+    }, { timeout: 30_000 });
 
     await this.bumpCompanyVersion(canonicalKey);
     const state = (await this.getExpansionState(params.fingerprint))!;
@@ -380,7 +402,7 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
         sourceRoles: params.fingerprintInput.roles,
         sourceLocations: params.fingerprintInput.locations,
         people: state.people,
-        definitiveEmpty: state.people.length === 0 && params.exhausted
+        definitiveEmpty: state.people.length === 0 && state.providerExhausted
       }
     );
     this.log("DISCOVER_PUBLIC_PERSON_UPSERT", {
@@ -394,19 +416,18 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     return state;
   }
 
-  async markProviderExhausted(fingerprint: string, provider: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY" = "APIFY"): Promise<void> {
+  async markProviderExhausted(fingerprint: string, provider: "FIRECRAWL" | "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY" = "APIFY"): Promise<void> {
     const prisma = this.prisma as any;
+    const batch = await prisma.discoverProviderBatch.findUnique({ where: { intentHash: fingerprint } }) as ProviderBatchRow;
+    const firecrawlExhausted = provider === "FIRECRAWL" || (batch.firecrawlExhausted ?? false);
+    const tavilyExhausted = provider === "TAVILY" || (batch.tavilyExhausted ?? false);
+    const brightExhausted = provider === "BRIGHTDATA_GOOGLE" || (batch.brightExhausted ?? false);
+    const apifyExhausted = provider === "APIFY" || (batch.apifyExhausted ?? false);
     await prisma.discoverProviderBatch.update({
       where: { intentHash: fingerprint },
-      data: {
-        providerExhausted: true,
-        ...(provider === "TAVILY"
-          ? { tavilyExhausted: true }
-          : provider === "BRIGHTDATA_GOOGLE"
-            ? { brightExhausted: true }
-            : { apifyExhausted: true }),
-        lastProviderFetchAt: this.now()
-      }
+      data: { firecrawlExhausted, tavilyExhausted, brightExhausted, apifyExhausted,
+        providerExhausted: (batch.providerChainVersion === 1 || firecrawlExhausted) && tavilyExhausted && brightExhausted && apifyExhausted,
+        lastProviderFetchAt: this.now() }
     });
   }
 

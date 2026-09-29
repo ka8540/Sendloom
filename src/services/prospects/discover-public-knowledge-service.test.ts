@@ -313,10 +313,46 @@ describe("DiscoverPublicKnowledgeService", () => {
   it("persists a provider-backed zero so an identical retry does not rediscover", async () => {
     await ingest({ fingerprint: request().fingerprint, people: [], exhausted: true });
 
+    for (const provider of ["FIRECRAWL", "TAVILY", "BRIGHTDATA_GOOGLE"] as const) {
+      await service.markProviderExhausted(request().fingerprint, provider);
+    }
+    redis.clear();
     const result = await service.lookupReusableDataset(request());
 
     expect(result.dataset.people).toHaveLength(0);
     expect(result.definitiveEmpty).toBe(true);
+  });
+
+  it("does not cache one exhausted provider's zero as whole-intent completion", async () => {
+    await ingest({ fingerprint: request().fingerprint, people: [], exhausted: true });
+    expect((await service.lookupReusableDataset(request())).definitiveEmpty).toBe(false);
+    await expect(service.getExpansionState(request().fingerprint)).resolves.toMatchObject({ providerExhausted: false });
+  });
+
+  it("keeps Firecrawl progress, surplus, and provenance through Redis loss and cross-provider deduplication", async () => {
+    const input = request();
+    const append = (provider: string, people: ResolvedCachePerson[], nextPage: number) => service.appendProviderPeople({
+      ...input, emailFormat: emptyFormat, people, nextPage, pagesFetched: 1, exhausted: false, provider
+    });
+    await append("FIRECRAWL", Array.from({ length: 25 }, (_, index) => person(`fc-${index}`)), 2);
+    await append("TAVILY", [person("foreign-id", { linkedinUrl: person("fc-0").linkedinUrl }), person("tavily-new")], 1);
+    redis.clear();
+    const state = await service.getExpansionState(input.fingerprint);
+    expect(state).toMatchObject({ firecrawlNextQueryIndex: 2, firecrawlQueriesFetched: 1, firecrawlExhausted: false, providerChainVersion: 2 });
+    expect(state?.people).toHaveLength(26);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(26);
+    expect(prisma._state.discoverProviderBatchPeople.filter((link) => link.provider === "FIRECRAWL")).toHaveLength(25);
+    expect((await service.lookupReusableDataset(input)).dataset.people).toHaveLength(26);
+  });
+
+  it("preserves version 1 legacy cursors while new batches start at version 2", async () => {
+    await ingest({ fingerprint: request().fingerprint });
+    const oldBatch = prisma._state.discoverProviderBatches[0];
+    oldBatch.providerChainVersion = 1;
+    oldBatch.tavilyNextQueryIndex = 3;
+    oldBatch.tavilyQueriesFetched = 3;
+    oldBatch.brightNextPage = 5;
+    await expect(service.getExpansionState(request().fingerprint)).resolves.toMatchObject({ providerChainVersion: 1, firecrawlNextQueryIndex: 0, firecrawlQueriesFetched: 0, firecrawlExhausted: false, tavilyNextQueryIndex: 3, brightNextPage: 5 });
   });
 
   it("keeps mixed provider provenance and continuation independently", async () => {

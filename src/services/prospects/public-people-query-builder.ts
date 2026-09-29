@@ -108,3 +108,19 @@ export function buildTavilyPeopleQueryPlan(input: {
   }
   return plan.slice(0, limit);
 }
+
+/** Firecrawl has no Search cursor: each authorized title is one durable query-plan entry. */
+export function buildFirecrawlPeopleQueryPlan(input: PeopleQueryInput & { maxQueries: number }): string[] {
+  const seen = new Set<string>();
+  const plan: string[] = [];
+  for (const title of input.providerTitles) {
+    const key = normalizeTitle(title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const query = buildPublicPeopleRoleUnionQuery({ ...input, providerTitles: [title] });
+    // Never truncate company/location clauses to satisfy the API's 500-character limit.
+    if (query && query.length <= 500 && !plan.includes(query)) plan.push(query);
+    if (plan.length >= Math.max(1, Math.floor(input.maxQueries))) break;
+  }
+  return plan;
+}

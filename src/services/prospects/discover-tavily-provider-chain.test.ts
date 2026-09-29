@@ -97,6 +97,7 @@ function setup(
     bright,
     apify,
     orchestrator: new DiscoverPeopleProviderOrchestrator({
+      firecrawl: { configured: false, searchProfiles: vi.fn(async () => { throw new Error("Disabled Firecrawl must not run"); }) },
       tavily,
       bright,
       apify,
@@ -119,7 +120,7 @@ const request = {
   searchId: "search"
 };
 
-describe("Tavily-first provider chain", () => {
+describe("Tavily provider continuation after Firecrawl fallback", () => {
   it("persists all first-query people and never calls Bright after filling the target", async () => {
     const found = Array.from({ length: 14 }, (_, index) => person(`first-${index}`));
     const onTavilyQuery = vi.fn(async () => undefined);

@@ -1,3 +1,7 @@
+import { firecrawlFixture, firecrawlRow } from "./__test-utils__/firecrawl-fixture";
+import { DiscoverPeopleProviderOrchestrator } from "./discover-people-provider-orchestrator";
+import { normalizeProfile } from "./apify-profile-search";
+import { emptyPublicProfileDiagnostics } from "./public-profile-search-metadata";
 import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -287,7 +291,8 @@ function buildService(
   discoverQuota: DiscoverQuotaReserver = allowAllQuota,
   discoverCache: DiscoverCachePort = passthroughCache,
   roleIntelligence?: DiscoverRoleIntelligencePort,
-  audit?: ProspectAuditFn
+  audit?: ProspectAuditFn,
+  providerOrchestrator?: DiscoverPeopleProviderOrchestrator
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -340,6 +345,7 @@ function buildService(
     emailFormatRateLimiter: async () => ({ allowed: true, retryAfterSeconds: 0 }),
     discoverQuota,
     discoverCache: resolvedCache,
+    providerOrchestrator,
     audit
   });
   return { service, ai };
@@ -4610,6 +4616,120 @@ describe("durable public Discover production flow", () => {
     locations: ["United States"],
     maxResults: 10
   };
+
+  it("persists all Firecrawl surplus, allocates ten, and reuses Postgres without Firecrawl after a Redis flush", async () => {
+    const fixture = firecrawlFixture(prisma, { pages: [Array.from({ length: 25 }, (_, index) => firecrawlRow(`fc-${index}`))] });
+    const durable = knowledge();
+    const quota = makeQuotaReserver({ limit: 10 });
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, quota.reserve, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    const result = await service.processSearch(USER_ID, search.id);
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(25);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(prisma._state.discoverProviderBatchPeople.every((link) => link.provider === "FIRECRAWL")).toBe(true);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(1);
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+    durable.redis.clear();
+    const second = await service.createSearch("another-user", oneRoleApple);
+    expect((await service.processSearch("another-user", second.id)).totalProcessed).toBe(10);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("automatically continues partial Firecrawl work after each action cap before reaching READY", async () => {
+    const fixture = firecrawlFixture(prisma, { pages: [[firecrawlRow("one")], Array.from({ length: 10 }, (_, index) => firecrawlRow(`next-${index}`))], perAction: 1 });
+    const durable = knowledge();
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, quota.reserve, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    expect((await service.processSearch(USER_ID, search.id))).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(2);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(11);
+    expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ firecrawlNextQueryIndex: 2, firecrawlQueriesFetched: 2, firecrawlExhausted: false });
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+  });
+  it("key failover persists and allocates once, with one query advance and one user quota reservation", async () => {
+    const fixture = firecrawlFixture(prisma, {
+      apiKeys: ["test-key-a", "test-key-b", "test-key-c"],
+      pages: [new Response(null, { status: 429 }), new Response(null, { status: 401 }),
+        Array.from({ length: 25 }, (_, index) => firecrawlRow(`failover-${index}`))]
+    });
+    const durable = knowledge();
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, quota.reserve, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    expect(await service.processSearch(USER_ID, search.id)).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(3);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(25);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ firecrawlNextQueryIndex: 1, firecrawlQueriesFetched: 1, firecrawlExhausted: false });
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+    expect(await service.processSearch(USER_ID, search.id)).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(3);
+    expect(quota.consumed.size).toBe(1);
+  });
+
+  it("automatically continues analogous partial Tavily work without prematurely completing or calling Bright", async () => {
+    let index = 0;
+    const tavily = { configured: true, searchProfiles: vi.fn(async () => {
+      const count = index++ === 0 ? 1 : 10;
+      const profiles = Array.from({ length: count }, (_, n) => normalizeProfile({ id: `tv-${index}-${n}`, fullName: "Jane Doe", headline: "Software Engineer", currentCompany: "Apple", location: "United States", linkedinUrl: `https://linkedin.com/in/tv-${index}-${n}` })!);
+      return { profiles, diagnostics: { ...emptyPublicProfileDiagnostics(), rawTavilyResults: count, creditsUsed: 1 } };
+    }) };
+    const fixture = firecrawlFixture(prisma, { maxQueries: 1, tavilyPerAction: 1, tavily });
+    const durable = knowledge();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, allowAllQuota, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    expect((await service.processSearch(USER_ID, search.id))).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(tavily.searchProfiles).toHaveBeenCalledTimes(2);
+    expect(fixture.bright.searchProfiles).not.toHaveBeenCalled();
+    expect(fixture.runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ tavilyNextQueryIndex: 2, tavilyQueriesFetched: 2, tavilyExhausted: false });
+  });
+
+  it("does not retry a failed Firecrawl during Tavily background continuation and keeps the new batch recoverable", async () => {
+    let index = 0;
+    const tavily = { configured: true, searchProfiles: vi.fn(async () => {
+      const profiles = Array.from({ length: index++ === 0 ? 1 : 10 }, (_, n) => normalizeProfile({ id: `recovery-${index}-${n}`, fullName: "Jane Doe", headline: "Software Engineer", currentCompany: "Apple", location: "United States", linkedinUrl: `https://linkedin.com/in/recovery-${index}-${n}` })!);
+      return { profiles, diagnostics: { ...emptyPublicProfileDiagnostics(), rawTavilyResults: profiles.length, creditsUsed: 1 } };
+    }) };
+    const fixture = firecrawlFixture(prisma, { pages: [new Response("invalid credentials", { status: 401 })], tavilyPerAction: 1, tavily });
+    const durable = knowledge();
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, quota.reserve, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    expect((await service.processSearch(USER_ID, search.id))).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(1);
+    expect(tavily.searchProfiles).toHaveBeenCalledTimes(2);
+    expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ providerChainVersion: 2, firecrawlNextQueryIndex: 0, firecrawlQueriesFetched: 0, firecrawlExhausted: false });
+    expect(quota.consumed.size).toBe(1);
+  });
+
+  it("preserves partial Firecrawl work on a parent deadline without reporting READY", async () => {
+    const fixture = firecrawlFixture(prisma, { perAction: 1 });
+    const durable = knowledge();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, allowAllQuota, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    const original = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(original);
+    fixture.fetcher.mockImplementationOnce(async () => {
+      clock.mockReturnValue(original + 116_000);
+      return Response.json({ success: true, data: { web: [firecrawlRow("partial")] } });
+    });
+    try {
+      expect((await service.processSearch(USER_ID, search.id))).toMatchObject({ status: "FAILED", errorCode: "PROVIDER_TIMEOUT" });
+      expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ firecrawlNextQueryIndex: 1, firecrawlExhausted: false });
+      expect(prisma._state.discoverPublicPeople).toHaveLength(1);
+      expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    } finally { clock.mockRestore(); }
+  });
 
   it("automatically calls Apify exactly once on a true Redis/Postgres zero and durably ingests results", async () => {
     const run = vi.fn<ApifyRunner["run"]>(async () => ({

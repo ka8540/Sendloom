@@ -1,3 +1,4 @@
+import { firecrawlFixture, firecrawlRow } from "./__test-utils__/firecrawl-fixture";
 import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -613,6 +614,69 @@ beforeEach(() => {
 });
 
 describe("DiscoverExpansionService.addMorePeople", () => {
+  function firecrawlKnowledge() {
+    const redis = new TestRedis();
+    return { redis, durable: new DiscoverPublicKnowledgeService({ prisma: prisma as unknown as PrismaClient, redis, lock: makeFakeLock() }) };
+  }
+
+  it("consumes 25 durable Firecrawl people across 10/10/5 batches before resuming query 1, including Redis flush and idempotent replay", async () => {
+    seedCompany(); seedSearch();
+    const fixture = firecrawlFixture(prisma, { pages: [Array.from({ length: 25 }, (_, index) => firecrawlRow(`surplus-${index}`)), Array.from({ length: 10 }, (_, index) => firecrawlRow(`resumed-${index}`))] });
+    const { durable, redis } = firecrawlKnowledge();
+    const { service, quota } = buildService({ cache: durable, runner: fixture.runner, roleIntelligence: fixture.roleIntelligence, providerOrchestrator: fixture.orchestrator, quota: makeQuotaReserver({ limit: 10 }) });
+    const add = (key: string) => service.addMorePeople({ userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: key });
+    const first = await add("fc-one");
+    expect(first.addedCount).toBe(10);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(1);
+    expect((await add("fc-one")).addedCount).toBe(10);
+    expect(quota.consumed.size).toBe(1);
+    redis.clear();
+    expect((await add("fc-two")).addedCount).toBe(10);
+    redis.clear();
+    expect((await add("fc-three")).addedCount).toBe(5);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(1);
+    redis.clear();
+    expect((await add("fc-four")).addedCount).toBe(10);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(2);
+    const bodies = fixture.fetcher.mock.calls.map((args) => JSON.parse((args as unknown as [string, RequestInit])[1].body as string));
+    expect(bodies[0].query).toContain('("Software Engineer")');
+    expect(bodies[1].query).toContain('("Software Developer")');
+    const state = await durable.getExpansionState(fingerprintFor().fingerprint);
+    expect(state).toMatchObject({ firecrawlNextQueryIndex: 2, firecrawlQueriesFetched: 2, firecrawlExhausted: false });
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    expect(fixture.runner.run).not.toHaveBeenCalled();
+  });
+
+  it("ends one bounded Add More action at its Firecrawl cap and durably resumes index 2 on the next explicit action", async () => {
+    seedCompany(); seedSearch();
+    const fixture = firecrawlFixture(prisma, { pages: [[firecrawlRow("partial")], [], Array.from({ length: 10 }, (_, index) => firecrawlRow(`next-${index}`))] });
+    const { durable, redis } = firecrawlKnowledge();
+    const { service } = buildService({ cache: durable, runner: fixture.runner, roleIntelligence: fixture.roleIntelligence, providerOrchestrator: fixture.orchestrator });
+    const first = await service.addMorePeople({ userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: "fc-cap" });
+    expect(first).toMatchObject({ addedCount: 1, exhausted: false });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(2);
+    await expect(durable.getExpansionState(fingerprintFor().fingerprint)).resolves.toMatchObject({ firecrawlNextQueryIndex: 2, firecrawlQueriesFetched: 2, firecrawlExhausted: false });
+    redis.clear();
+    expect((await service.addMorePeople({ userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: "fc-resume" })).addedCount).toBe(10);
+    const last = fixture.fetcher.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(JSON.parse(last[1].body as string).query).toContain('("Backend Engineer")');
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pre-rollout completed batch complete without restarting Firecrawl", async () => {
+    seedCompany(); seedSearch();
+    const fixture = firecrawlFixture(prisma);
+    const { durable } = firecrawlKnowledge();
+    const { fingerprintInput, fingerprint } = { fingerprintInput: fingerprintFor().input, fingerprint: fingerprintFor().fingerprint };
+    await durable.appendProviderPeople({ fingerprint, fingerprintInput, company: { name: "Apple", domain: "apple.com", linkedinUrl: "https://linkedin.com/company/apple" }, emailFormat: { emailDomain: null, emailDomainConfidence: "UNAVAILABLE", emailDomainEvidence: null, emailPattern: null, patternConfidence: "UNAVAILABLE", patternEvidence: null, emailFormatReason: null }, people: [], provider: "APIFY", nextPage: 5, pagesFetched: 4, exhausted: true });
+    Object.assign(prisma._state.discoverProviderBatches[0], { providerChainVersion: 1, tavilyExhausted: true, brightExhausted: true, apifyExhausted: true, providerExhausted: true });
+    const { service, quota } = buildService({ cache: durable, runner: fixture.runner, roleIntelligence: fixture.roleIntelligence, providerOrchestrator: fixture.orchestrator });
+    expect((await service.addMorePeople({ userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: "old-completed" }))).toMatchObject({ addedCount: 0, exhausted: true });
+    expect(fixture.fetcher).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(0);
+  });
+
   it("reuses one durable PROCESSING expansion across different tab idempotency keys", async () => {
     seedCompany();
     seedSearch();

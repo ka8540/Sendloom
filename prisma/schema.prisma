@@ -1088,6 +1088,11 @@ model DiscoverProviderBatch {
   providerNextPage     Int       @default(1)
   providerPagesFetched Int       @default(0)
   providerExhausted    Boolean   @default(false)
+  // Version 1 batches retain their pre-Firecrawl chain; new batches use version 2.
+  providerChainVersion Int      @default(2)
+  firecrawlNextQueryIndex Int   @default(0)
+  firecrawlQueriesFetched Int   @default(0)
+  firecrawlExhausted Boolean    @default(false)
   tavilyNextQueryIndex Int       @default(0)
   tavilyQueriesFetched Int       @default(0)
   tavilyExhausted      Boolean   @default(false)
