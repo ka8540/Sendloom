@@ -19,7 +19,7 @@ export function firecrawlRow(id: string, companyName = "Apple", title = "Softwar
 
 export function firecrawlFixture(prisma: FakePrisma, options: {
   pages?: unknown[]; tavilyPerAction?: number; perAction?: number; maxQueries?: number; plan?: string[];
-  tavily?: TavilyProfileSearchProvider; bright?: BrightProfileSearchProvider;
+  tavily?: TavilyProfileSearchProvider; bright?: BrightProfileSearchProvider; apiKeys?: string[];
 } = {}) {
   let page = 0;
   const fetcher = vi.fn(async () => {
@@ -28,7 +28,7 @@ export function firecrawlFixture(prisma: FakePrisma, options: {
     if (value instanceof Response) return value;
     return Response.json({ success: true, data: { web: value }, creditsUsed: 2 });
   });
-  const firecrawl = new FirecrawlPublicProfileSearchService(new FirecrawlSearchProvider({ enabled: true, apiKey: "test-firecrawl-key", fetcher: fetcher as typeof fetch }));
+  const firecrawl = new FirecrawlPublicProfileSearchService(new FirecrawlSearchProvider({ enabled: true, apiKeys: options.apiKeys, apiKey: "test-firecrawl-key", fetcher: fetcher as typeof fetch }));
   const tavily = options.tavily ?? { configured: true, searchProfiles: vi.fn(async () => ({ profiles: [], diagnostics: { ...emptyPublicProfileDiagnostics(), rawTavilyResults: 0, creditsUsed: 0 } })) };
   const bright = options.bright ?? { configured: false, searchProfiles: vi.fn(async () => { throw new Error("Unexpected Bright call"); }) };
   const runner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };

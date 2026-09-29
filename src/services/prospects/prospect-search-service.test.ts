@@ -4651,6 +4651,30 @@ describe("durable public Discover production flow", () => {
     expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
     expect(quota.consumed.size).toBe(1);
   });
+  it("key failover persists and allocates once, with one query advance and one user quota reservation", async () => {
+    const fixture = firecrawlFixture(prisma, {
+      apiKeys: ["test-key-a", "test-key-b", "test-key-c"],
+      pages: [new Response(null, { status: 429 }), new Response(null, { status: 401 }),
+        Array.from({ length: 25 }, (_, index) => firecrawlRow(`failover-${index}`))]
+    });
+    const durable = knowledge();
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, fixture.runner, AI_RESPONSES, undefined, quota.reserve, durable.service, fixture.roleIntelligence, undefined, fixture.orchestrator);
+    const search = await service.createSearch(USER_ID, oneRoleApple);
+    expect(await service.processSearch(USER_ID, search.id)).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(3);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(25);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(prisma._state.discoverProviderBatches[0]).toMatchObject({ firecrawlNextQueryIndex: 1, firecrawlQueriesFetched: 1, firecrawlExhausted: false });
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+    expect(await service.processSearch(USER_ID, search.id)).toMatchObject({ status: "READY", totalProcessed: 10 });
+    expect(prisma._state.discoverPublicPeople).toHaveLength(25);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(fixture.fetcher).toHaveBeenCalledTimes(3);
+    expect(quota.consumed.size).toBe(1);
+  });
 
   it("automatically continues analogous partial Tavily work without prematurely completing or calling Bright", async () => {
     let index = 0;

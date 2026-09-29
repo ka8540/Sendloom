@@ -18,6 +18,7 @@ The official API supports limits 1–100, a 500-character query maximum, optiona
 
 ```dotenv
 DISCOVER_FIRECRAWL_ENABLED=true
+FIRECRAWL_API_KEYS=
 FIRECRAWL_API_KEY=
 DISCOVER_FIRECRAWL_TIMEOUT_MS=30000
 DISCOVER_FIRECRAWL_MAX_RESULTS_PER_QUERY=50
@@ -28,7 +29,17 @@ DISCOVER_FIRECRAWL_SCRAPE_RESULTS=false
 
 Operational CLI imports use Node’s `react-server` condition for the server-only marker: `npm run prospect:test` supplies it, and direct repair scripts use `tsx --conditions=react-server`.
 
-The API key is optional for application boot; an unavailable/disabled client allows the existing fallback chain. It is guarded by the Next `server-only` boundary and never stored or logged. Scraping cannot be enabled: `true` fails environment validation. The maximum result setting counts raw search rows, never authorized people.
+Credentials are optional for application boot; an unavailable/disabled client allows the existing fallback chain. They are guarded by the Next `server-only` boundary and never stored or logged. Scraping cannot be enabled: `true` fails environment validation. The maximum result setting counts raw search rows, never authorized people.
+
+## Authorized credential pool
+
+One Firecrawl provider can use several authorized credentials. In Vercel, add the server-only variable `FIRECRAWL_API_KEYS` as a comma-separated string, for example `fc-key-one,fc-key-two,fc-key-three` (placeholders only). Whitespace and empty comma entries are ignored; duplicate keys are attempted once. A non-empty pool takes precedence over `FIRECRAWL_API_KEY`. An empty/unset pool falls back to that existing single-key setting. Neither variable needs the other to be configured.
+
+For each query, keys are tried in their configured order. Key A exhausted → key B; key B invalid → key C; key C works → Firecrawl returns normally and stops trying keys. Only HTTP 401/403 (authentication/permission), 402 (documented insufficient credits/billing), and 429 (rate limit) allow another key attempt. Classification uses HTTP status, never arbitrary error-body text. Firecrawl rate limits are shared by all keys on the same team, so a second key on the same workspace does not provide independent rate-limit capacity; the pool supports the authorized workspaces you configure.
+
+There is no sleep or immediate retry of the failed key, including when `Retry-After` is supplied. Another configured key is tried immediately, under one shared Firecrawl timeout and the parent's deadline minus its existing five-second cleanup reserve. Each attempt sends only the remaining timeout. Network errors/timeouts, parent cancellation/deadline, malformed responses, HTTP 400/422, and generic 5xx stop the pool and preserve existing failure behavior. If every eligible key fails, Firecrawl returns one final safe error and the provider chain can fall back to Tavily. The final key's category determines that error; credit exhaustion maps to the existing rate-limit fallback event.
+
+Credential failover is separate from Discover query continuation. Query 2 with key A failing and key B succeeding is still one successful query: the query index and fetched counter advance once, and people persist/allocate once. No credential index is stored in Postgres or Redis, and no new migration is required. Success logs include only numeric `configuredKeyCount`, `keyAttempts`, zero-based `successfulKeySlot`, and `keyFailoverCount`; failover logs add fixed `AUTH`, `RATE_LIMIT`, or `QUOTA` reasons. Logs/errors/results contain no keys, key fragments/hashes, or Authorization headers. Only the successful response's `creditsUsed` is counted; failed attempts are not used to estimate billing.
 
 ## Queries and authorization
 
@@ -48,9 +59,9 @@ Provider switching is state driven. As in the existing provider chain, a success
 
 ## Failure categories and costs
 
-Fixed categories are `FIRECRAWL_AUTH_ERROR`, `FIRECRAWL_RATE_LIMIT`, `FIRECRAWL_TIMEOUT`, `FIRECRAWL_MALFORMED_RESPONSE`, and `FIRECRAWL_PROVIDER_ERROR`. HTTP 401/403 map to authentication, 429 to rate limit, and 408/504 to timeout. Invalid JSON/envelopes map to malformed response; non-empty arrays containing only malformed entries fail without advancing. Partially malformed arrays discard unusable entries. A successful empty web array advances normally.
+Fixed categories are `FIRECRAWL_AUTH_ERROR`, `FIRECRAWL_RATE_LIMIT`, `FIRECRAWL_TIMEOUT`, `FIRECRAWL_MALFORMED_RESPONSE`, and `FIRECRAWL_PROVIDER_ERROR`. HTTP 401/403 map to authentication, 402 credit exhaustion and 429 map to the rate-limit fallback event, and 408/504 to timeout. Invalid JSON/envelopes map to malformed response; non-empty arrays containing only malformed entries fail without advancing. Partially malformed arrays discard unusable entries. A successful empty web array advances normally.
 
-As with the existing Tavily transport, there is no immediate retry loop: classified Firecrawl availability failures use Tavily for the current action. A future explicit opportunity can retry the same Firecrawl query. This avoids extra credit attempts and avoids ignoring a 429 `Retry-After` by retrying immediately. Parent cancellation stops provider routing. Retries, continuation segments, and fallbacks never reserve another user daily slot.
+After bounded credential failover, classified Firecrawl availability failures use Tavily for the current action. There is no same-key retry loop or wait. A future explicit opportunity can retry the same Firecrawl query. Parent cancellation stops provider routing. Retries, continuation segments, and fallbacks never reserve another user daily slot.
 
 Structured logs contain fixed event names, query indices, counts, intent/company keys, exhaustion, and credit usage. They contain no names, emails, profile URLs, payloads, keys, or provider-supplied error messages.
 

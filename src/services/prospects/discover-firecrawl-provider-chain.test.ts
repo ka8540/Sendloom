@@ -29,6 +29,42 @@ describe("Firecrawl-first provider chain", () => {
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["good"]);
     expect(result.diagnostics.firecrawl?.roleRejected).toBe(1);
   });
+  it("counts a resumed query once after key failover and persists one FIRECRAWL contribution", async () => {
+    const fixture = firecrawlFixture(createFakePrisma(), {
+      apiKeys: ["test-key-a", "test-key-b", "test-key-c"],
+      pages: [new Response(null, { status: 429 }), new Response(null, { status: 401 }),
+        Array.from({ length: 25 }, (_, index) => firecrawlRow(`pool-${index}`))]
+    });
+    const persist = vi.fn(async () => undefined);
+    const result = await fixture.orchestrator.discover({ ...request(), firecrawlStartQueryIndex: 2,
+      firecrawlQueriesFetched: 2, onFirecrawlQuery: persist });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(3);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(result.contributions).toHaveLength(1);
+    expect(result.contributions[0]).toMatchObject({ provider: "FIRECRAWL", nextPage: 3, pagesFetched: 1 });
+    expect(result.contributions[0].people).toHaveLength(25);
+    expect(result.people).toHaveLength(10);
+    expect(result.diagnostics).toMatchObject({ firecrawlNextQueryIndex: 3, firecrawlQueriesFetched: 3, firecrawlExhausted: false });
+    expect(fixture.tavily.searchProfiles).not.toHaveBeenCalled();
+  });
+  it.each([
+    [[429, 429, 429, 429, 429], "FIRECRAWL_RATE_LIMIT"],
+    [[401, 403, 401, 403, 401], "FIRECRAWL_AUTH_ERROR"],
+    [[402, 402, 402, 402, 402], "FIRECRAWL_RATE_LIMIT"]
+  ])("all-key failure falls back to Tavily without consuming or exhausting the query: %j", async (statuses, failureEvent) => {
+    const fixture = firecrawlFixture(createFakePrisma(), {
+      apiKeys: ["test-key-a", "test-key-b", "test-key-c", "test-key-d", "test-key-e"],
+      pages: statuses.map((status) => new Response(null, { status }))
+    });
+    const persist = vi.fn(async () => undefined);
+    const result = await fixture.orchestrator.discover({ ...request(), firecrawlStartQueryIndex: 2,
+      firecrawlQueriesFetched: 2, onFirecrawlQuery: persist });
+    expect(fixture.fetcher).toHaveBeenCalledTimes(5);
+    expect(persist).not.toHaveBeenCalled();
+    expect(fixture.tavily.searchProfiles).toHaveBeenCalled();
+    expect(result.diagnostics).toMatchObject({ firecrawlFailureEvent: failureEvent,
+      firecrawlNextQueryIndex: 2, firecrawlQueriesFetched: 2, firecrawlExhausted: false });
+  });
   it("a per-action cap preserves the next query and pending background work instead of switching providers", async () => {
     const fixture = firecrawlFixture(createFakePrisma(), { pages: [[firecrawlRow("one")], [firecrawlRow("two")]] });
     const result = await fixture.orchestrator.discover(request());

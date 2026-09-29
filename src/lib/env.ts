@@ -107,6 +107,8 @@ const envSchema = z
     APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
     // Firecrawl Search is metadata-only; page scraping cannot be enabled.
     DISCOVER_FIRECRAWL_ENABLED: booleanFlag(true),
+    FIRECRAWL_API_KEYS: z.string().optional().transform((value) =>
+      (value ?? "").split(",").map((key) => key.trim()).filter(Boolean)),
     FIRECRAWL_API_KEY: z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional()),
     DISCOVER_FIRECRAWL_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
     DISCOVER_FIRECRAWL_MAX_RESULTS_PER_QUERY: z.coerce.number().int().positive().max(100).default(50),
@@ -318,6 +320,7 @@ function readRawEnv() {
     APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
     APIFY_PROSPECT_ACTOR_ID: process.env.APIFY_PROSPECT_ACTOR_ID,
     DISCOVER_FIRECRAWL_ENABLED: process.env.DISCOVER_FIRECRAWL_ENABLED,
+    FIRECRAWL_API_KEYS: process.env.FIRECRAWL_API_KEYS,
     FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
     DISCOVER_FIRECRAWL_TIMEOUT_MS: process.env.DISCOVER_FIRECRAWL_TIMEOUT_MS,
     DISCOVER_FIRECRAWL_MAX_RESULTS_PER_QUERY: process.env.DISCOVER_FIRECRAWL_MAX_RESULTS_PER_QUERY,
