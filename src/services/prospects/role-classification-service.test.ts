@@ -62,12 +62,20 @@ describe("deterministicCategory", () => {
       "talent acquisition specialist",
       "recruiting leader",
       "executive technology recruiting leader",
-      "campus recruiter"
+      "campus recruiter",
+      "senior talent acquisition partner", "recruiting manager", "recruitment partner",
+      "talent acquisition manager", "technical talent sourcer", "talent sourcer", "recruiting lead", "sourcer"
     ];
 
     expect(titles.map((title) => deterministicCategory(title))).toEqual(
       titles.map(() => "RECRUITING")
     );
+  });
+
+  it("keeps HR generalists and people partners separate from recruiting", () => {
+    expect(deterministicCategory("hr generalist")).toBe("HUMAN_RESOURCES");
+    expect(deterministicCategory("people partner")).toBe("HUMAN_RESOURCES");
+    expect(deterministicCategory("partnership manager")).not.toBe("RECRUITING");
   });
 
   it("returns null for genuinely unknown titles", () => {

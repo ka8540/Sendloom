@@ -12,8 +12,11 @@ import { parseLinkedInSearchResult } from "@/services/prospects/linkedin-search-
 import { buildPublicPeopleRoleUnionQuery } from "@/services/prospects/public-people-query-builder";
 import { extractPublicLocationEvidence, resolvePublicLocation } from "@/services/prospects/public-profile-location";
 import { env } from "@/lib/env";
+import { DiscoverCandidateEligibilityService, type DiscoverCandidateEligibilityPort } from "@/services/prospects/discover-candidate-eligibility-service";
+import { emptyPublicProfileDiagnostics, judgePublicProfileSearchResults, type PublicProfileDiagnostics } from "@/services/prospects/public-profile-search-metadata";
+import type { AiCallBudget } from "@/services/prospects/prospect-ai";
 
-export type BrightProfileDiagnostics = {
+export type BrightProfileDiagnostics = PublicProfileDiagnostics & {
   rawBrightResults: number;
   linkedInCandidates: number;
   currentEmploymentAccepted: number;
@@ -23,7 +26,6 @@ export type BrightProfileDiagnostics = {
   locationAccepted: number;
   locationMissing: number;
   locationContradictionRejected: number;
-  duplicateRejected: number;
   enrichmentCalls: number;
 };
 
@@ -41,12 +43,16 @@ export interface BrightProfileSearchProvider {
       signal?: AbortSignal;
       deadlineAtMs?: number;
       locationEnrichmentLimit?: number;
+      requestedTitles?: string[];
+      budget?: AiCallBudget;
+      searchId?: string | null;
     }
   ): Promise<BrightProfileSearchResult>;
 }
 
 function counters(): BrightProfileDiagnostics {
   return {
+    ...emptyPublicProfileDiagnostics(),
     rawBrightResults: 0,
     linkedInCandidates: 0,
     currentEmploymentAccepted: 0,
@@ -56,7 +62,6 @@ function counters(): BrightProfileDiagnostics {
     locationAccepted: 0,
     locationMissing: 0,
     locationContradictionRejected: 0,
-    duplicateRejected: 0,
     enrichmentCalls: 0
   };
 }
@@ -79,39 +84,26 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
 
   constructor(
     private readonly provider: BrightDataPeopleSearchProvider = new BrightDataGoogleSearchProvider(),
-    private readonly enrichmentLimit = env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT
+    private readonly enrichmentLimit = env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT,
+    private readonly eligibility: DiscoverCandidateEligibilityPort = new DiscoverCandidateEligibilityService()
   ) {
     this.configured = provider.configured;
   }
 
-  async searchProfiles(
+  private async validateDeterministically(
+    results: readonly BrightOrganicResult[],
     input: ApifyProfileSearchInput & {
       signal?: AbortSignal;
       deadlineAtMs?: number;
       locationEnrichmentLimit?: number;
-    }
-  ): Promise<BrightProfileSearchResult> {
-    const diagnostics = counters();
-    const page = Math.max(1, Math.floor(input.startPage ?? 1));
-    const query = buildPublicPeopleRoleUnionQuery({
-      companyName: input.companyName,
-      providerTitles: input.jobTitles,
-      locations: input.locations
-    });
-    if (!query) return { profiles: [], diagnostics, nextPage: page, exhausted: true };
-
-    const response = await this.provider.search(query, {
-      page,
-      requestedLocations: input.locations,
-      signal: input.signal,
-      deadlineAtMs: input.deadlineAtMs
-    });
-    diagnostics.rawBrightResults = response.rawOrganicResults;
+    },
+    diagnostics: BrightProfileDiagnostics
+  ): Promise<NormalizedProfile[]> {
     const accepted: Array<{ profile: NormalizedProfile; result: BrightOrganicResult }> = [];
     const seen = new PersonIdentitySet();
 
-    for (const result of response.results) {
-      const profile = parseLinkedInSearchResult(result);
+    for (const result of results) {
+      const profile = parseLinkedInSearchResult(result, { expectedCompanyName: input.companyName });
       if (!profile) continue;
       diagnostics.linkedInCandidates += 1;
       if (!seen.addIfNew(profile)) {
@@ -163,6 +155,68 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
       else diagnostics.locationMissing += 1;
       profiles.push({ ...candidate.profile, ...location.location });
     }
+    return profiles;
+  }
+
+  async searchProfiles(
+    input: ApifyProfileSearchInput & {
+      signal?: AbortSignal;
+      deadlineAtMs?: number;
+      locationEnrichmentLimit?: number;
+      requestedTitles?: string[];
+      budget?: AiCallBudget;
+      searchId?: string | null;
+    }
+  ): Promise<BrightProfileSearchResult> {
+    const diagnostics = counters();
+    const page = Math.max(1, Math.floor(input.startPage ?? 1));
+    const query = buildPublicPeopleRoleUnionQuery({
+      companyName: input.companyName,
+      providerTitles: input.jobTitles,
+      locations: input.locations
+    });
+    if (!query) return { profiles: [], diagnostics, nextPage: page, exhausted: true };
+
+    const response = await this.provider.search(query, {
+      page,
+      requestedLocations: input.locations,
+      signal: input.signal,
+      deadlineAtMs: input.deadlineAtMs
+    });
+    diagnostics.rawBrightResults = response.rawOrganicResults;
+    diagnostics.preJudgeMalformedCount = Math.max(0, response.rawOrganicResults - response.results.length);
+    if (input.budget && input.requestedTitles && this.eligibility.enabled) {
+      const profiles = await judgePublicProfileSearchResults(
+        response.results.map((result) => ({
+          url: result.url,
+          title: result.title,
+          description: result.snippet ?? ""
+        })),
+        {
+          companyName: input.companyName,
+          locations: input.locations,
+          requestedTitles: input.requestedTitles,
+          provider: "BRIGHTDATA_GOOGLE",
+          searchId: input.searchId,
+          budget: input.budget
+        },
+        diagnostics,
+        this.eligibility,
+        async () => {
+          const fallbackDiagnostics = counters();
+          const profiles = await this.validateDeterministically(response.results, input, fallbackDiagnostics);
+          diagnostics.enrichmentCalls += fallbackDiagnostics.enrichmentCalls;
+          return profiles;
+        }
+      );
+      return {
+        profiles: profiles.slice(0, Math.max(1, Math.floor(input.maxResults))),
+        diagnostics,
+        nextPage: page + 1,
+        exhausted: response.exhausted
+      };
+    }
+    const profiles = await this.validateDeterministically(response.results, input, diagnostics);
 
     return {
       profiles: profiles.slice(0, Math.max(1, Math.floor(input.maxResults))),

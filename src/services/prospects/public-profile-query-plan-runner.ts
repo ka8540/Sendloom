@@ -68,11 +68,19 @@ export async function runPublicProfileQueryPlan<D extends PublicProfileDiagnosti
       if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
       const processed = await input.buildPeople(result.profiles);
       const unique = processed.filter((person) => input.identities.addIfNew(person));
+      const roleRescues = result.profiles.filter((profile) =>
+        profile.discoverEligibility === "AI_ACCEPT" &&
+        profile.discoverDeterministicEligibilityAccepted === true &&
+        profile.discoverDeterministicRoleAccepted === false
+      ).length;
       const counts = { ...result.diagnostics,
-        roleRejected: result.diagnostics.roleRejected + Math.max(0, result.profiles.length - processed.length),
+        aiJudgeFallbackUsed: Number(result.diagnostics.aiJudgeFallbackCount ?? 0) > 0,
+        aiAcceptedDeterministicWouldRejectCount:
+          Number(result.diagnostics.aiAcceptedDeterministicWouldRejectCount ?? 0) + roleRescues,
+        roleRejected: Number(result.diagnostics.roleRejected ?? 0) + Math.max(0, result.profiles.length - processed.length),
         duplicateRejected: result.diagnostics.duplicateRejected + processed.length - unique.length };
       for (const key of Object.keys(total) as Array<keyof D>) {
-        total[key] = (Number(total[key]) + Number(counts[key])) as D[keyof D];
+        total[key] = (Number(total[key] ?? 0) + Number(counts[key] ?? 0)) as D[keyof D];
       }
       diagnostics = total;
       people.push(...unique);

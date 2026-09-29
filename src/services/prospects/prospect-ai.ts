@@ -10,6 +10,7 @@ export type ProspectReasoningEffort = "none" | "low" | "medium" | "high" | "xhig
 export type AiTaskType =
   | "company_resolution"
   | "role_classification"
+  | "candidate_eligibility"
   | "email_pattern"
   // Resolving a person whose stored name is too incomplete to build an address
   // from ("Jared C."). Strictly a fallback — see AiCallBudget below, and note
@@ -186,11 +187,18 @@ export class AiCallBudget {
   private readonly counts: Record<AiTaskType, number> = {
     company_resolution: 0,
     role_classification: 0,
+    candidate_eligibility: 0,
     email_pattern: 0,
     person_identity: 0
   };
 
-  constructor(private readonly limits: Record<AiTaskType, number>) {}
+  private readonly limits: Record<AiTaskType, number>;
+
+  constructor(limits: Omit<Record<AiTaskType, number>, "candidate_eligibility"> & {
+    candidate_eligibility?: number;
+  }) {
+    this.limits = { ...limits, candidate_eligibility: limits.candidate_eligibility ?? 0 };
+  }
 
   canCall(task: AiTaskType): boolean {
     return this.counts[task] < this.limits[task];
@@ -208,6 +216,7 @@ export class AiCallBudget {
     return (
       this.counts.company_resolution +
       this.counts.role_classification +
+      this.counts.candidate_eligibility +
       this.counts.email_pattern +
       this.counts.person_identity
     );
@@ -218,6 +227,7 @@ export function createAiBudget(): AiCallBudget {
   return new AiCallBudget({
     company_resolution: env.PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH,
     role_classification: env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
+    candidate_eligibility: env.DISCOVER_AI_CANDIDATE_MAX_CALLS_PER_SEARCH,
     email_pattern: env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,
     person_identity: env.PROSPECT_AI_MAX_IDENTITY_CALLS_PER_SEARCH
   });

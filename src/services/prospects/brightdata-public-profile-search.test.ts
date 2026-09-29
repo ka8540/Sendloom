@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { BrightDataPeopleSearchProvider, BrightOrganicResult } from "./brightdata-google-search-provider";
 import { BrightDataPublicProfileSearchService } from "./brightdata-public-profile-search";
+import {
+  emptyCandidateJudgeDiagnostics,
+  type DiscoverCandidateEligibilityPort,
+  type DiscoverCandidateEvidence
+} from "./discover-candidate-eligibility-service";
+import { AiCallBudget } from "./prospect-ai";
 
 const row = (slug: string, headline = "Software Engineer at Acme", location = "New York, New York, United States"): BrightOrganicResult => ({
   title: `Jane ${slug} - ${headline} | LinkedIn`,
@@ -21,6 +27,42 @@ const input = {
 };
 
 describe("BrightDataPublicProfileSearchService", () => {
+  it("sends every organic result to the shared judge before deterministic rejection", async () => {
+    const results = [
+      row("recruiter", "Technical Recruiter at Guidewire Software", "United States"),
+      row("engineer", "Software Engineer at Guidewire Software", "United States"),
+      row("former", "Former Recruiter at Guidewire Software", "United States"),
+      row("london", "Recruiter at Guidewire Software", "London, United Kingdom")
+    ];
+    let received: readonly DiscoverCandidateEvidence[] = [];
+    const eligibility: DiscoverCandidateEligibilityPort = {
+      enabled: true,
+      shadow: false,
+      evaluate: vi.fn(async ({ candidates }) => {
+        received = candidates;
+        return { decisions: new Map(), shadow: false, diagnostics: {
+          ...emptyCandidateJudgeDiagnostics(), aiJudgeCandidateCount: candidates.length,
+          aiJudgeFallbackCount: candidates.length
+        } };
+      })
+    };
+    const provider: BrightDataPeopleSearchProvider = { configured: true, search: vi.fn(async () => ({
+      results, rawOrganicResults: results.length, page: 1, exhausted: true
+    })) };
+    const budget = new AiCallBudget({ company_resolution: 0, role_classification: 0,
+      candidate_eligibility: 1, email_pattern: 0, person_identity: 0 });
+
+    await new BrightDataPublicProfileSearchService(provider, 0, eligibility).searchProfiles({
+      ...input,
+      companyName: "Guidewire Software",
+      requestedTitles: ["Recruiter"],
+      budget
+    });
+
+    expect(received).toHaveLength(4);
+    expect(received.map((candidate) => candidate.provider)).toEqual(Array(4).fill("BRIGHTDATA_GOOGLE"));
+  });
+
   it("keeps supported city/state/country evidence and rejects explicit contradictions", async () => {
     const provider: BrightDataPeopleSearchProvider = {
       configured: true,
@@ -54,6 +96,35 @@ describe("BrightDataPublicProfileSearchService", () => {
     expect(search).toHaveBeenCalledTimes(2);
     expect(result.profiles[0]).toMatchObject({ city: "New York", country: "United States" });
     expect(result.diagnostics.enrichmentCalls).toBe(1);
+  });
+
+  it("preserves bounded location enrichment when AI falls back", async () => {
+    const search = vi.fn(async (_query: string, options: { page: number }) => ({
+      results: search.mock.calls.length === 1 ? [row("fallback-enriched", "Software Engineer at Acme", "")] : [row("fallback-enriched")],
+      rawOrganicResults: 1,
+      page: options.page,
+      exhausted: true
+    }));
+    const eligibility: DiscoverCandidateEligibilityPort = {
+      enabled: true,
+      shadow: false,
+      evaluate: vi.fn(async ({ candidates }: Parameters<DiscoverCandidateEligibilityPort["evaluate"]>[0]) => ({
+        decisions: new Map(), shadow: false, diagnostics: {
+          ...emptyCandidateJudgeDiagnostics(), aiJudgeCandidateCount: candidates.length,
+          aiJudgeFallbackCount: candidates.length
+        }
+      }))
+    };
+    const budget = new AiCallBudget({ company_resolution: 0, role_classification: 0,
+      candidate_eligibility: 1, email_pattern: 0, person_identity: 0 });
+
+    const result = await new BrightDataPublicProfileSearchService(
+      { configured: true, search }, 1, eligibility
+    ).searchProfiles({ ...input, requestedTitles: ["Software Engineer"], budget });
+
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(result.profiles[0]).toMatchObject({ sourceProfileId: "fallback-enriched", city: "New York" });
+    expect(result.diagnostics).toMatchObject({ aiJudgeFallbackCount: 1, enrichmentCalls: 1 });
   });
 
   it("never fabricates a requested city and rejects former employees", async () => {

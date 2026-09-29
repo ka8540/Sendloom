@@ -2,6 +2,7 @@ import { coercePositionCategory } from "@/lib/prospect-enums";
 import { env } from "@/lib/env";
 import {
   ApifyCompanyTargetingError,
+  currentCompanyMatches,
   type ApifyIngestionDiagnostics,
   type ApifyProfileSearchService,
   type NormalizedProfile
@@ -18,11 +19,18 @@ import {
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import type { DiscoverRoleIntelligencePort } from "@/services/prospects/discover-role-intelligence-service";
+import {
+  DiscoverCandidateEligibilityService,
+  emptyCandidateJudgeDiagnostics,
+  type DiscoverCandidateEligibilityPort,
+  type DiscoverCandidateJudgeDiagnostics
+} from "@/services/prospects/discover-candidate-eligibility-service";
 import { nameStateFields } from "@/services/prospects/discover-name-contract";
+import { evaluateDiscoverLocationMatch } from "@/services/prospects/discover-location-matching";
 import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import type { AiCallBudget } from "@/services/prospects/prospect-ai";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
-import type { RoleClassificationService } from "@/services/prospects/role-classification-service";
+import { deterministicCategory, type RoleClassificationService } from "@/services/prospects/role-classification-service";
 import { buildTavilyPeopleQueryPlan } from "@/services/prospects/public-people-query-builder";
 import {
   TavilyPublicProfileSearchService,
@@ -137,10 +145,12 @@ export type DiscoverPeopleProviderOrchestratorDeps = {
   tavilyMaxQueries?: number;
   tavilyMaxQueriesPerAction?: number;
   minimumRemainingBudgetMs?: number;
+  candidateEligibility?: DiscoverCandidateEligibilityPort;
 };
 
 function emptyBrightDiagnostics(): BrightProfileDiagnostics {
   return {
+    ...emptyCandidateJudgeDiagnostics(),
     rawBrightResults: 0,
     linkedInCandidates: 0,
     currentEmploymentAccepted: 0,
@@ -150,6 +160,7 @@ function emptyBrightDiagnostics(): BrightProfileDiagnostics {
     locationAccepted: 0,
     locationMissing: 0,
     locationContradictionRejected: 0,
+    roleRejected: 0,
     duplicateRejected: 0,
     enrichmentCalls: 0
   };
@@ -157,6 +168,7 @@ function emptyBrightDiagnostics(): BrightProfileDiagnostics {
 
 function emptyTavilyDiagnostics(): TavilyProfileDiagnostics {
   return {
+    ...emptyCandidateJudgeDiagnostics(),
     rawTavilyResults: 0,
     linkedInCandidates: 0,
     currentEmploymentAccepted: 0,
@@ -177,7 +189,7 @@ function addBrightDiagnostics(
   page: BrightProfileDiagnostics
 ): void {
   for (const key of Object.keys(total) as Array<keyof BrightProfileDiagnostics>) {
-    total[key] += page[key];
+    total[key] += Number(page[key] ?? 0);
   }
 }
 
@@ -191,15 +203,17 @@ export class DiscoverPeopleProviderOrchestrator {
   private readonly bright: BrightProfileSearchProvider;
   private readonly brightMaxPages: number;
   private readonly minimumRemainingBudgetMs: number;
+  private readonly candidateEligibility: DiscoverCandidateEligibilityPort;
 
   constructor(private readonly deps: DiscoverPeopleProviderOrchestratorDeps) {
-    this.firecrawl = deps.firecrawl ?? new FirecrawlPublicProfileSearchService();
+    this.candidateEligibility = deps.candidateEligibility ?? new DiscoverCandidateEligibilityService();
+    this.firecrawl = deps.firecrawl ?? new FirecrawlPublicProfileSearchService(undefined, this.candidateEligibility);
     this.firecrawlMaxQueries = deps.firecrawlMaxQueries ?? env.DISCOVER_FIRECRAWL_MAX_QUERIES;
     this.firecrawlMaxQueriesPerAction = deps.firecrawlMaxQueriesPerAction ?? env.DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION;
-    this.tavily = deps.tavily ?? new TavilyPublicProfileSearchService();
+    this.tavily = deps.tavily ?? new TavilyPublicProfileSearchService(undefined, this.candidateEligibility);
     this.tavilyMaxQueries = deps.tavilyMaxQueries ?? env.DISCOVER_TAVILY_MAX_QUERIES;
     this.tavilyMaxQueriesPerAction = deps.tavilyMaxQueriesPerAction ?? env.DISCOVER_TAVILY_MAX_QUERIES_PER_ACTION;
-    this.bright = deps.bright ?? new BrightDataPublicProfileSearchService();
+    this.bright = deps.bright ?? new BrightDataPublicProfileSearchService(undefined, undefined, this.candidateEligibility);
     this.brightMaxPages = deps.brightMaxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     this.minimumRemainingBudgetMs = deps.minimumRemainingBudgetMs ?? 5_000;
   }
@@ -325,7 +339,9 @@ export class DiscoverPeopleProviderOrchestrator {
       attemptLimit: Math.max(1, Math.floor(input.firecrawlQueryAttemptLimit ?? this.firecrawlMaxQueriesPerAction)),
       emptyDiagnostics: { ...emptyPublicProfileDiagnostics(), rawFirecrawlResults: 0, creditsUsed: 0 },
       rawCount: (counts) => counts.rawFirecrawlResults,
-      search: (query) => this.firecrawl.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations, query, signal: input.signal, deadlineAtMs: input.deadlineAtMs }),
+      search: (query) => this.firecrawl.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations,
+        requestedTitles: input.requestedTitles, budget: input.budget, searchId: input.searchId,
+        query, signal: input.signal, deadlineAtMs: input.deadlineAtMs }),
       failureEvent: firecrawlFailureEvent, availabilityFailure: "FIRECRAWL_AUTH_ERROR", persist: input.onFirecrawlQuery
     });
     // As with existing providers, successful partial exhausted results end this action.
@@ -344,7 +360,8 @@ export class DiscoverPeopleProviderOrchestrator {
       plan: tavilyPlan, startQueryIndex: tavilyStartQueryIndex, queriesFetched: tavilyQueriesFetched,
       exhausted: input.tavilyExhausted ?? false, attemptLimit: tavilyQueryAttemptLimit,
       emptyDiagnostics: emptyTavilyDiagnostics(), rawCount: (counts) => counts.rawTavilyResults,
-      search: (query) => this.tavily.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations, query, signal: input.signal }),
+      search: (query) => this.tavily.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations,
+        requestedTitles: input.requestedTitles, budget: input.budget, searchId: input.searchId, query, signal: input.signal }),
       failureEvent: tavilyFailureEvent, availabilityFailure: "TAVILY_AUTH_ERROR", persist: input.onTavilyQuery
     });
     const { people: tavilyPeople, diagnostics: tavilyDiagnostics, status: tavilyStatus, failure: tavilyFailure,
@@ -410,7 +427,10 @@ export class DiscoverPeopleProviderOrchestrator {
             startPage: page,
             signal: input.signal,
             deadlineAtMs: input.deadlineAtMs,
-            locationEnrichmentLimit: remainingLocationEnrichmentCalls
+            locationEnrichmentLimit: remainingLocationEnrichmentCalls,
+            requestedTitles: input.requestedTitles,
+            budget: input.budget,
+            searchId: input.searchId
           });
         } catch (error) {
           if (parentDeadlineReached()) {
@@ -455,6 +475,9 @@ export class DiscoverPeopleProviderOrchestrator {
         brightDiagnostics = aggregateBrightDiagnostics;
         if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
         const processedPage = await this.buildPeople(result.profiles, input, "CACHE");
+        aggregateBrightDiagnostics.aiAcceptedDeterministicWouldRejectCount =
+          (aggregateBrightDiagnostics.aiAcceptedDeterministicWouldRejectCount ?? 0) +
+          roleRescueCount(result.profiles);
         const uniquePage = processedPage.filter((person) => identities.addIfNew(person));
         aggregateBrightDiagnostics.duplicateRejected += processedPage.length - uniquePage.length;
         brightPeople.push(...uniquePage);
@@ -494,6 +517,7 @@ export class DiscoverPeopleProviderOrchestrator {
           brightPagesFetched: brightPagesFetched + brightPagesSucceeded,
           brightExhausted: contribution.exhausted,
           ...result.diagnostics,
+          aiJudgeFallbackUsed: Number(result.diagnostics.aiJudgeFallbackCount ?? 0) > 0,
           pageBrightValidUnique: uniquePage.length,
           totalBrightValidUnique: brightPeople.length,
           brightPeoplePersisted,
@@ -665,8 +689,11 @@ export class DiscoverPeopleProviderOrchestrator {
         startPage: apifyStartPage
       });
       apifyDiagnostics = apify.diagnostics;
-      if (apify.profiles.length > 0) await input.onProfilesDiscovered?.();
-      apifyPeople = await this.buildPeople(apify.profiles, input, "PROVIDER");
+      const judgedApifyProfiles = await this.judgeApifyProfiles(apify.judgeProfiles ?? apify.profiles, apify.profiles, input, apifyDiagnostics);
+      if (judgedApifyProfiles.length > 0) await input.onProfilesDiscovered?.();
+      apifyPeople = await this.buildPeople(judgedApifyProfiles, input, "PROVIDER");
+      apifyDiagnostics.aiAcceptedDeterministicWouldRejectCount =
+        (apifyDiagnostics.aiAcceptedDeterministicWouldRejectCount ?? 0) + roleRescueCount(judgedApifyProfiles);
       apifyPeople = apifyPeople.filter((person) => identities.addIfNew(person));
       contributions.push({
         provider: "APIFY",
@@ -709,7 +736,8 @@ export class DiscoverPeopleProviderOrchestrator {
         unusedDurableCount: input.unusedDurableCount ?? 0,
         brightRawResults: rawBrightResults,
         brightPeoplePersisted,
-        apifyFallbackReason
+        apifyFallbackReason,
+        aiJudgeFallbackUsed: Number(apifyDiagnostics.aiJudgeFallbackCount ?? 0) > 0
       });
     }
 
@@ -818,15 +846,91 @@ export class DiscoverPeopleProviderOrchestrator {
     });
     // Preserve master behavior for Apify while semantic role intelligence is
     // disabled. Bright still requires explicit public role validation.
+    const aiAccepted = new Set(profiles.filter((profile) => profile.discoverEligibility === "AI_ACCEPT")
+      .map((profile) => profile.sourceProfileId));
     if (context === "PROVIDER" && !this.deps.roleIntelligence.enabled) return people;
-    return this.deps.roleIntelligence.filterAndRankPeople({
+    const filtered = await this.deps.roleIntelligence.filterAndRankPeople({
+      // Run the old role policy for every candidate so disagreement remains
+      // observable, then union AI accepts back into the authoritative result.
       people,
       requestedTitles: input.requestedTitles,
       requestedLocations: input.requestedLocations,
       context,
       options: { budget: input.budget, searchId: input.searchId }
     });
+    const acceptedIds = new Set(filtered.map((person) => person.sourceProfileId));
+    for (const profile of rawProfiles) {
+      if (profile.discoverEligibility === "AI_ACCEPT") {
+        profile.discoverDeterministicRoleAccepted = acceptedIds.has(profile.sourceProfileId);
+      }
+    }
+    return people.filter((person) => aiAccepted.has(person.sourceProfileId) || acceptedIds.has(person.sourceProfileId));
   }
+
+  private async judgeApifyProfiles(
+    candidates: NormalizedProfile[],
+    deterministicProfiles: NormalizedProfile[],
+    input: { companyName: string; requestedTitles: string[]; requestedLocations: string[]; budget: AiCallBudget; searchId: string },
+    diagnostics: ApifyIngestionDiagnostics
+  ): Promise<NormalizedProfile[]> {
+    if (!this.candidateEligibility.enabled) return deterministicProfiles;
+    const deterministicIds = new Set(deterministicProfiles.map((profile) => profile.sourceProfileId));
+    const evaluated = await this.candidateEligibility.evaluate({
+      intent: { company: input.companyName, roles: input.requestedTitles, locations: input.requestedLocations },
+      candidates: candidates.map((profile, index) => ({
+        candidateId: `APIFY:${index}`,
+        provider: "APIFY",
+        name: profile.sourceName ?? profile.fullName,
+        url: profile.linkedinUrl,
+        providerTitle: profile.headline ?? profile.currentTitle,
+        providerDescription: null,
+        parsedTitle: profile.currentTitle,
+        parsedCompany: profile.currentCompanyName,
+        parsedLocation: profile.location,
+        employmentParserDecision: currentCompanyMatches(profile, { companyName: input.companyName }) ? "CURRENT" :
+          profile.currentCompanyName ? "CONTRADICTORY" : "INSUFFICIENT",
+        locationParserDecision: (() => {
+          const match = evaluateDiscoverLocationMatch({
+            candidate: profile,
+            requestedLocations: input.requestedLocations,
+            context: "CACHE"
+          });
+          return match.matches ? "MATCH" as const : match.reason === "MISSING_METADATA" ? "MISSING" as const : "MISMATCH" as const;
+        })(),
+        roleClassifierCategory: profile.currentTitle ? deterministicCategory(normalizeTitle(profile.currentTitle)) : null
+      })),
+      budget: input.budget,
+      searchId: input.searchId
+    });
+    for (const key of Object.keys(evaluated.diagnostics) as Array<keyof DiscoverCandidateJudgeDiagnostics>) {
+      diagnostics[key] = (diagnostics[key] ?? 0) + evaluated.diagnostics[key];
+    }
+    diagnostics.preJudgeMalformedCount = (diagnostics.preJudgeMalformedCount ?? 0) + diagnostics.rejectedBySchema;
+    const accepted: NormalizedProfile[] = [];
+    for (const [index, profile] of candidates.entries()) {
+      const oldAccepted = deterministicIds.has(profile.sourceProfileId);
+      const decision = evaluated.decisions.get(`APIFY:${index}`)?.decision;
+      if (decision === "ACCEPT" && !oldAccepted) {
+        diagnostics.aiAcceptedDeterministicWouldRejectCount = (diagnostics.aiAcceptedDeterministicWouldRejectCount ?? 0) + 1;
+      }
+      if (decision === "REJECT" && oldAccepted) {
+        diagnostics.aiRejectedDeterministicWouldAcceptCount = (diagnostics.aiRejectedDeterministicWouldAcceptCount ?? 0) + 1;
+      }
+      const keep = evaluated.shadow ? oldAccepted : decision === "ACCEPT" ? true : decision === "REJECT" ? false : oldAccepted;
+      if (keep) accepted.push({ ...profile,
+        discoverEligibility: decision === "ACCEPT" && !evaluated.shadow ? "AI_ACCEPT" : "DETERMINISTIC_FALLBACK",
+        discoverDeterministicEligibilityAccepted: oldAccepted });
+    }
+    return accepted;
+  }
+}
+
+function roleRescueCount(profiles: readonly NormalizedProfile[]): number {
+  return profiles.filter((profile) =>
+    profile.discoverEligibility === "AI_ACCEPT" &&
+    profile.discoverDeterministicEligibilityAccepted === true &&
+    profile.discoverDeterministicRoleAccepted === false
+  ).length;
 }
 
 function safeEvent(event: string, counters: Record<string, unknown>): void {

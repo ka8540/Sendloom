@@ -20,6 +20,31 @@ import type {
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
+import { FirecrawlPublicProfileSearchService } from "./firecrawl-public-profile-search";
+import { TavilyPublicProfileSearchService } from "./tavily-public-profile-search";
+import { BrightDataPublicProfileSearchService } from "./brightdata-public-profile-search";
+import type { PublicSearchMetadata } from "./public-profile-search-metadata";
+
+async function searchGuidewire(provider: string, rows: PublicSearchMetadata[]) {
+  const input = { companyName: "Guidewire Software", locations: ["United States"], query: "query",
+    jobTitles: ["Recruiter"], maxResults: 30 };
+  if (provider === "Firecrawl") {
+    return new FirecrawlPublicProfileSearchService({ configured: true, search: async () => ({
+      results: rows.map((row) => ({ ...row, position: 1 })), rawResultCount: rows.length, creditsUsed: 1
+    }) }).searchProfiles(input);
+  }
+  if (provider === "Tavily") {
+    return new TavilyPublicProfileSearchService({ configured: true, search: async () => ({
+      results: rows.map((row) => ({ ...row, content: row.description, score: 0.9 })),
+      rawResultCount: rows.length, creditsUsed: 1, responseTimeSeconds: 0
+    }) }).searchProfiles(input);
+  }
+  return new BrightDataPublicProfileSearchService({ configured: true, search: async () => ({
+    results: rows.map((row) => ({ ...row, rawUrl: row.url, displayedUrl: null,
+      snippet: row.description, evidence: [row.title, row.description] })),
+    rawOrganicResults: rows.length, page: 1, exhausted: true
+  }) }, 0).searchProfiles(input);
+}
 
 const DIMENSIONS = 1536;
 
@@ -172,6 +197,47 @@ beforeEach(() => {
 });
 
 describe("DiscoverRoleIntelligenceService", () => {
+  it.each(["Firecrawl", "Tavily", "Bright"])(
+    "keeps real Guidewire recruiting titles through the %s metadata/employment/location/semantic funnel",
+    async (provider) => {
+      const valid = ["Recruiter", "Technical Recruiter", "Senior Recruiter", "Recruiting Manager",
+        "Talent Acquisition Specialist", "Senior Talent Acquisition Partner", "Talent Acquisition Business Partner",
+        "Recruitment Partner", "Talent Acquisition Manager", "Technical Talent Sourcer", "Talent Sourcer", "Sourcer", "Recruiting Lead"];
+      const rows: PublicSearchMetadata[] = [...valid, "Software Engineer", "Product Manager", "Marketing Manager", "HR Generalist"]
+        .map((title, index) => ({ title: `Jane Doe - ${title}`, url: `https://www.linkedin.com/in/guidewire-${index}`,
+          description: `${title} · Guidewire Software · San Mateo, California, United States` }));
+      rows.push({ title: "Jane Doe - Guidewire Software", url: "https://www.linkedin.com/in/guidewire-reversed",
+        description: "Guidewire Software · Senior Talent Acquisition Partner · United States" });
+      rows.push(...["Former Talent Acquisition Partner", "Retired Recruiter"].map((title, index) => ({
+        title: `Jane Doe - ${title} at Guidewire Software`, url: `https://www.linkedin.com/in/historical-${index}`,
+        description: `${title} at Guidewire Software · United States`
+      })), { title: "Jane Doe - Recruiter at Another Company", url: "https://www.linkedin.com/in/wrong-company",
+        description: "Recruiter at Another Company; previously Guidewire Software · United States" });
+      const response = await searchGuidewire(provider, rows);
+      expect(response.diagnostics).toMatchObject({ currentEmploymentAccepted: 18, locationAccepted: 18,
+        formerEmployeeRejected: 3 });
+      expect(response.profiles.find((profile) => profile.sourceProfileId === "guidewire-5")).toMatchObject({
+        currentTitle: "Senior Talent Acquisition Partner", currentCompanyName: "Guidewire Software", country: "United States"
+      });
+      expect(response.profiles.find((profile) => profile.sourceProfileId === "guidewire-reversed")).toMatchObject({
+        currentTitle: "Senior Talent Acquisition Partner", currentCompanyName: "Guidewire Software"
+      });
+      const classifications = await classifier.classify(response.profiles.map((profile) => profile.currentTitle!), { budget: budget() });
+      expect(classifications.get("senior talent acquisition partner")?.category).toBe("RECRUITING");
+      expect(classifications.get("hr generalist")?.category).toBe("HUMAN_RESOURCES");
+      const people = response.profiles.map((profile) => ({
+        ...person(profile.sourceProfileId, profile.currentTitle!, classifications.get(profile.normalizedTitle!)!.category),
+        ...profile
+      }));
+      const service = new DiscoverRoleIntelligenceService(classifier, new FakeEmbeddings({}), new MemoryRoleStore(), config());
+      const ranked = await service.filterAndRankPeople({ people, requestedTitles: ["Recruiter"],
+        requestedLocations: ["United States"], context: "PROVIDER", options: { budget: budget() } });
+      expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual([
+        ...valid.map((_, index) => `guidewire-${index}`), "guidewire-reversed"
+      ].sort());
+    }
+  );
+
   it("rejects configuration that cannot match the vector column or title caps", () => {
     expect(() => validateRoleIntelligenceConfig(config({ embeddingDimensions: 3072 }))).toThrow(/vector\(1536\)/);
     expect(() => validateRoleIntelligenceConfig(config({ semanticVersion: "" }))).toThrow(/non-empty/);
@@ -592,6 +658,19 @@ describe("DiscoverRoleIntelligenceService", () => {
       "Mobile iOS Engineer"
     ]);
     expect(await service.buildProviderTitlePlan(["CTO"], { budget: budget() })).toEqual(["CTO", "Chief Technology Officer"]);
+  });
+
+  it("takes numbered recruiter expansions from stored title knowledge and preserves legitimate levels", async () => {
+    const store = new MemoryRoleStore();
+    const service = new DiscoverRoleIntelligenceService(classifier, new FakeEmbeddings({}), store,
+      config({ maxApifyTitlesPerRole: 8, maxApifyTitlesTotal: 8 }));
+    await service.persistTitleKnowledge(["Recruiter 3", "Recruiter II"], { budget: budget() });
+    expect(store.records.size).toBe(2);
+    expect(await service.buildProviderTitlePlan(["Recruiter"], { budget: budget() }))
+      .toEqual(["Recruiter", "Talent Acquisition Specialist", "recruiter 3", "recruiter ii"]);
+    for (const title of ["Engineer II", "Recruiter II", "Software Engineer III"]) {
+      expect((await service.buildProviderTitlePlan([title], { budget: budget() }))[0]).toBe(title);
+    }
   });
 
   it("expands broad HR in one provider plan while respecting per-role and total caps", async () => {
