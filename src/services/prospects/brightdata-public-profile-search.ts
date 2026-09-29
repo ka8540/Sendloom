@@ -111,7 +111,7 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
     const seen = new PersonIdentitySet();
 
     for (const result of response.results) {
-      const profile = parseLinkedInSearchResult(result);
+      const profile = parseLinkedInSearchResult(result, { expectedCompanyName: input.companyName });
       if (!profile) continue;
       diagnostics.linkedInCandidates += 1;
       if (!seen.addIfNew(profile)) {

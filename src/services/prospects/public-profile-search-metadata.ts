@@ -43,7 +43,7 @@ export function validatePublicProfileSearchResults(
       snippet: row.description,
       evidence: [row.title, row.description]
     };
-    const profile = parseLinkedInSearchResult(result);
+    const profile = parseLinkedInSearchResult(result, { expectedCompanyName: input.companyName });
     if (!profile) continue;
     counts.linkedInCandidates += 1;
     if (!seen.addIfNew(profile)) {
