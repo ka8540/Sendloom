@@ -11,6 +11,7 @@ import {
   type PersonIdentityStatus,
   parsePersonName
 } from "@/services/prospects/prospect-person-name";
+import type { DiscoverCandidateJudgeDiagnostics } from "@/services/prospects/discover-candidate-eligibility-service";
 
 // Minimal normalized profile. We deliberately discard everything Sendloom does
 // not need (photos, phone numbers, personal emails, education, full employment
@@ -43,6 +44,11 @@ export type NormalizedProfile = {
   linkedinUrl: string;
   currentCompanyName: string | null;
   currentCompanyUrl: string | null;
+  /** Ephemeral provider-pipeline authority; omitted when persisted. */
+  discoverEligibility?: "AI_ACCEPT" | "DETERMINISTIC_FALLBACK";
+  /** Ephemeral old-pipeline comparison fields; omitted when persisted. */
+  discoverDeterministicEligibilityAccepted?: boolean;
+  discoverDeterministicRoleAccepted?: boolean;
 };
 
 export type ApifyProfileSearchInput = {
@@ -71,6 +77,8 @@ export type CompanyTargetingContext = {
 
 export type ApifyProfileSearchResult = {
   profiles: NormalizedProfile[];
+  /** All technically normalized provider rows, before company eligibility. */
+  judgeProfiles?: NormalizedProfile[];
   runId: string | null;
   datasetId: string | null;
   totalFound: number;
@@ -435,7 +443,7 @@ export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile
  * Privacy-safe, per-stage ingestion counters for one dataset. Counts only —
  * never names, emails, URLs, or raw items — so they are safe to log and audit.
  */
-export type ApifyIngestionDiagnostics = {
+export type ApifyIngestionDiagnostics = Partial<DiscoverCandidateJudgeDiagnostics> & {
   itemsReturned: number;
   parsedCandidates: number;
   rejectedBySchema: number;
@@ -446,6 +454,7 @@ export type ApifyIngestionDiagnostics = {
 
 export type ProcessedDatasetItems = {
   profiles: NormalizedProfile[];
+  judgeProfiles: NormalizedProfile[];
   diagnostics: ApifyIngestionDiagnostics;
 };
 
@@ -481,6 +490,7 @@ export function processDatasetItems(
 
   return {
     profiles: matched.slice(0, Math.max(1, Math.floor(maxResults))),
+    judgeProfiles: normalized,
     diagnostics: {
       itemsReturned: items.length,
       parsedCandidates: normalized.length,
@@ -679,6 +689,7 @@ export class ApifyProfileSearchService {
 
     return {
       profiles: processed.profiles,
+      judgeProfiles: processed.judgeProfiles,
       runId,
       datasetId,
       totalFound: items.length,

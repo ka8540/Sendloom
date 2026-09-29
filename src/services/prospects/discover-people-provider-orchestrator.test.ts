@@ -6,6 +6,11 @@ import { BrightDataPublicProfileSearchService, type BrightProfileSearchProvider 
 import { DiscoverPeopleProviderOrchestrator } from "./discover-people-provider-orchestrator";
 import { PersonIdentitySet } from "./discover-person-identity";
 import { createAiBudget } from "./prospect-ai";
+import {
+  emptyCandidateJudgeDiagnostics,
+  type DiscoverCandidateEligibilityPort,
+  type DiscoverCandidateEvidence
+} from "./discover-candidate-eligibility-service";
 
 function profile(id: string): NormalizedProfile {
   return normalizeProfile({
@@ -18,7 +23,12 @@ function profile(id: string): NormalizedProfile {
   })!;
 }
 
-function build(brightProfiles: NormalizedProfile[], apifyProfiles: NormalizedProfile[] = [], brightError?: Error) {
+function build(
+  brightProfiles: NormalizedProfile[],
+  apifyProfiles: NormalizedProfile[] = [],
+  brightError?: Error,
+  options: { candidateEligibility?: DiscoverCandidateEligibilityPort; judgeProfiles?: NormalizedProfile[] } = {}
+) {
   const bright: BrightProfileSearchProvider = {
     configured: true,
     searchProfiles: vi.fn(async () => {
@@ -46,6 +56,7 @@ function build(brightProfiles: NormalizedProfile[], apifyProfiles: NormalizedPro
   const apify = {
     searchProfiles: vi.fn(async () => ({
       profiles: apifyProfiles,
+      judgeProfiles: options.judgeProfiles,
       runId: "run",
       datasetId: "dataset",
       totalFound: apifyProfiles.length,
@@ -74,7 +85,8 @@ function build(brightProfiles: NormalizedProfile[], apifyProfiles: NormalizedPro
       bright,
       apify,
       roleClassifier: roleClassifier as never,
-      roleIntelligence: roleIntelligence as never
+      roleIntelligence: roleIntelligence as never,
+      candidateEligibility: options.candidateEligibility
     })
   };
 }
@@ -608,6 +620,74 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["fallback"]);
     expect(result.diagnostics).toMatchObject({ brightStatus: "FAILED", apifyFallbackCalled: true });
+  });
+
+  it("does not let deterministic role/category rejection override an AI ACCEPT", async () => {
+    const rescued = { ...profile("rescued-role"), currentTitle: "People Scout", discoverEligibility: "AI_ACCEPT" as const,
+      discoverDeterministicEligibilityAccepted: true };
+    const { orchestrator } = build([rescued]);
+    const intelligence = (orchestrator as unknown as { deps: { roleIntelligence: {
+      enabled: boolean;
+      filterAndRankPeople: ReturnType<typeof vi.fn>;
+    } } }).deps.roleIntelligence;
+    intelligence.enabled = true;
+    intelligence.filterAndRankPeople.mockResolvedValue([]);
+
+    const result = await orchestrator.discover({ ...request, desiredCount: 1 });
+
+    expect(intelligence.filterAndRankPeople).toHaveBeenCalledWith(expect.objectContaining({
+      people: [expect.objectContaining({ sourceProfileId: "rescued-role" })]
+    }));
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["rescued-role"]);
+    expect((rescued as NormalizedProfile).discoverDeterministicRoleAccepted).toBe(false);
+    expect(result.diagnostics.bright?.aiAcceptedDeterministicWouldRejectCount).toBe(1);
+  });
+
+  it("sends every normalized Apify candidate to the shared eligibility judge", async () => {
+    const judgeProfiles = [
+      profile("apify-valid"),
+      normalizeProfile({ id: "apify-other-company", linkedinUrl: "https://www.linkedin.com/in/apify-other-company",
+        fullName: "Other Company", currentTitle: "Recruiter", currentCompany: "OtherCo", location: "United States" })!,
+      normalizeProfile({ id: "apify-wrong-role", linkedinUrl: "https://www.linkedin.com/in/apify-wrong-role",
+        fullName: "Wrong Role", currentTitle: "Product Manager", currentCompany: "Acme", location: "United States" })!
+    ];
+    let received: readonly DiscoverCandidateEvidence[] = [];
+    const candidateEligibility: DiscoverCandidateEligibilityPort = {
+      enabled: true,
+      shadow: false,
+      evaluate: vi.fn(async ({ candidates }: Parameters<DiscoverCandidateEligibilityPort["evaluate"]>[0]) => {
+        received = candidates;
+        return {
+          shadow: false,
+          diagnostics: { ...emptyCandidateJudgeDiagnostics(), aiJudgeCandidateCount: candidates.length,
+            aiJudgeAcceptedCount: candidates.length },
+          decisions: new Map(candidates.map((candidate) => [candidate.candidateId, {
+            candidateId: candidate.candidateId,
+            decision: "ACCEPT" as const,
+            companyMatch: true,
+            roleMatch: true,
+            locationMatch: true,
+            currentEmployment: true,
+            confidence: "HIGH" as const,
+            reasonCode: "MATCH" as const,
+            matchedRequestedRoles: ["Software Engineer"]
+          }]))
+        };
+      })
+    };
+    const { orchestrator } = build([], [judgeProfiles[0]], new BrightDataSearchError("TIMEOUT"), {
+      candidateEligibility,
+      judgeProfiles
+    });
+
+    const result = await orchestrator.discover(request);
+
+    expect(received).toHaveLength(3);
+    expect(received.map((candidate) => candidate.provider)).toEqual(Array(3).fill("APIFY"));
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual([
+      "apify-valid", "apify-other-company", "apify-wrong-role"
+    ]);
+    expect(result.diagnostics.apify?.aiJudgeCandidateCount).toBe(3);
   });
 
   it.each<[

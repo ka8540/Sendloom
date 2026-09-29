@@ -115,6 +115,12 @@ const envSchema = z
     DISCOVER_FIRECRAWL_MAX_QUERIES: z.coerce.number().int().positive().max(20).default(5),
     DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION: z.coerce.number().int().positive().max(10).default(2),
     DISCOVER_FIRECRAWL_SCRAPE_RESULTS: z.enum(["false"]).optional().transform(() => false),
+    // Candidate judging is a fail-closed rollout: disabled preserves the exact
+    // deterministic pipeline; shadow runs AI while deterministic rules decide.
+    DISCOVER_AI_CANDIDATE_JUDGE_ENABLED: booleanFlag(false),
+    DISCOVER_AI_CANDIDATE_JUDGE_SHADOW: booleanFlag(false),
+    DISCOVER_AI_CANDIDATE_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(25),
+    DISCOVER_AI_CANDIDATE_MAX_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().max(50).default(25),
     DISCOVER_TAVILY_ENABLED: booleanFlag(true),
     TAVILY_API_KEY: z.string().min(1).optional(),
     DISCOVER_TAVILY_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(30_000),
@@ -327,6 +333,10 @@ function readRawEnv() {
     DISCOVER_FIRECRAWL_MAX_QUERIES: process.env.DISCOVER_FIRECRAWL_MAX_QUERIES,
     DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION: process.env.DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION,
     DISCOVER_FIRECRAWL_SCRAPE_RESULTS: process.env.DISCOVER_FIRECRAWL_SCRAPE_RESULTS,
+    DISCOVER_AI_CANDIDATE_JUDGE_ENABLED: process.env.DISCOVER_AI_CANDIDATE_JUDGE_ENABLED,
+    DISCOVER_AI_CANDIDATE_JUDGE_SHADOW: process.env.DISCOVER_AI_CANDIDATE_JUDGE_SHADOW,
+    DISCOVER_AI_CANDIDATE_BATCH_SIZE: process.env.DISCOVER_AI_CANDIDATE_BATCH_SIZE,
+    DISCOVER_AI_CANDIDATE_MAX_CALLS_PER_SEARCH: process.env.DISCOVER_AI_CANDIDATE_MAX_CALLS_PER_SEARCH,
     DISCOVER_TAVILY_ENABLED: process.env.DISCOVER_TAVILY_ENABLED,
     TAVILY_API_KEY: process.env.TAVILY_API_KEY,
     DISCOVER_TAVILY_TIMEOUT_MS: process.env.DISCOVER_TAVILY_TIMEOUT_MS,
