@@ -29,6 +29,11 @@ import {
   type TavilyProfileDiagnostics,
   type TavilyProfileSearchProvider
 } from "@/services/prospects/tavily-public-profile-search";
+import { FirecrawlPublicProfileSearchService, type FirecrawlProfileDiagnostics, type FirecrawlProfileSearchProvider } from "@/services/prospects/firecrawl-public-profile-search";
+import { firecrawlFailureEvent } from "@/services/prospects/firecrawl-search-provider";
+import { emptyPublicProfileDiagnostics } from "@/services/prospects/public-profile-search-metadata";
+import { runPublicProfileQueryPlan } from "@/services/prospects/public-profile-query-plan-runner";
+import { buildFirecrawlPeopleQueryPlan } from "@/services/prospects/public-people-query-builder";
 import { tavilyFailureEvent } from "@/services/prospects/tavily-search-provider";
 
 export type BrightStopReason =
@@ -49,7 +54,7 @@ export type ApifyFallbackReason =
   | "BRIGHT_MALFORMED_RESPONSE";
 
 export type ProviderContribution = {
-  provider: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY";
+  provider: "FIRECRAWL" | "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY";
   people: ResolvedCachePerson[];
   nextPage: number;
   pagesFetched: number;
@@ -61,6 +66,20 @@ export type ProviderContribution = {
 };
 
 export type ProviderChainDiagnostics = {
+  /** Successful unfinished query work that initial background discovery must resume. */
+  continuationPending: boolean;
+  firecrawlStatus: "DISABLED" | "RESULTS" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "FAILED";
+  firecrawlFailureEvent: ReturnType<typeof firecrawlFailureEvent> | null;
+  firecrawl: FirecrawlProfileDiagnostics | null;
+  firecrawlValidUnique: number;
+  firecrawlStartQueryIndex: number;
+  firecrawlEndQueryIndex: number;
+  firecrawlQueriesAttempted: number;
+  firecrawlQueriesSucceeded: number;
+  firecrawlNextQueryIndex: number;
+  firecrawlQueriesFetched: number;
+  firecrawlExhausted: boolean;
+  firecrawlPeoplePersisted: number;
   tavilyStatus: "DISABLED" | "RESULTS" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "FAILED";
   tavilyFailureEvent: ReturnType<typeof tavilyFailureEvent> | null;
   tavily: TavilyProfileDiagnostics | null;
@@ -106,6 +125,9 @@ export type ProviderChainResult = {
 };
 
 export type DiscoverPeopleProviderOrchestratorDeps = {
+  firecrawl?: FirecrawlProfileSearchProvider;
+  firecrawlMaxQueries?: number;
+  firecrawlMaxQueriesPerAction?: number;
   tavily?: TavilyProfileSearchProvider;
   bright?: BrightProfileSearchProvider;
   apify: ApifyProfileSearchService;
@@ -150,10 +172,6 @@ function emptyTavilyDiagnostics(): TavilyProfileDiagnostics {
   };
 }
 
-function addTavilyDiagnostics(total: TavilyProfileDiagnostics, query: TavilyProfileDiagnostics): void {
-  for (const key of Object.keys(total) as Array<keyof TavilyProfileDiagnostics>) total[key] += query[key];
-}
-
 function addBrightDiagnostics(
   total: BrightProfileDiagnostics,
   page: BrightProfileDiagnostics
@@ -164,6 +182,9 @@ function addBrightDiagnostics(
 }
 
 export class DiscoverPeopleProviderOrchestrator {
+  private readonly firecrawl: FirecrawlProfileSearchProvider;
+  private readonly firecrawlMaxQueries: number;
+  private readonly firecrawlMaxQueriesPerAction: number;
   private readonly tavily: TavilyProfileSearchProvider;
   private readonly tavilyMaxQueries: number;
   private readonly tavilyMaxQueriesPerAction: number;
@@ -172,6 +193,9 @@ export class DiscoverPeopleProviderOrchestrator {
   private readonly minimumRemainingBudgetMs: number;
 
   constructor(private readonly deps: DiscoverPeopleProviderOrchestratorDeps) {
+    this.firecrawl = deps.firecrawl ?? new FirecrawlPublicProfileSearchService();
+    this.firecrawlMaxQueries = deps.firecrawlMaxQueries ?? env.DISCOVER_FIRECRAWL_MAX_QUERIES;
+    this.firecrawlMaxQueriesPerAction = deps.firecrawlMaxQueriesPerAction ?? env.DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION;
     this.tavily = deps.tavily ?? new TavilyPublicProfileSearchService();
     this.tavilyMaxQueries = deps.tavilyMaxQueries ?? env.DISCOVER_TAVILY_MAX_QUERIES;
     this.tavilyMaxQueriesPerAction = deps.tavilyMaxQueriesPerAction ?? env.DISCOVER_TAVILY_MAX_QUERIES_PER_ACTION;
@@ -179,6 +203,8 @@ export class DiscoverPeopleProviderOrchestrator {
     this.brightMaxPages = deps.brightMaxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     this.minimumRemainingBudgetMs = deps.minimumRemainingBudgetMs ?? 5_000;
   }
+
+  get firecrawlConfigured(): boolean { return this.firecrawl.configured; }
 
   get brightConfigured(): boolean {
     return this.bright.configured;
@@ -196,6 +222,12 @@ export class DiscoverPeopleProviderOrchestrator {
     maxResults: number;
     /** Valid unique people this action should try to collect before stopping Bright. */
     desiredCount?: number;
+    firecrawlStartQueryIndex?: number;
+    firecrawlQueriesFetched?: number;
+    firecrawlExhausted?: boolean;
+    /** Rollout batches retain their original chain; this is not exhaustion. */
+    skipFirecrawl?: boolean;
+    firecrawlQueryAttemptLimit?: number;
     tavilyStartQueryIndex?: number;
     brightStartPage?: number;
     apifyStartPage?: number;
@@ -218,6 +250,8 @@ export class DiscoverPeopleProviderOrchestrator {
     onProfilesDiscovered?: () => Promise<void> | void;
     /** Durable boundary invoked after each successful Bright page, before the next page starts. */
     onBrightPage?: (contribution: ProviderContribution) => Promise<void>;
+    /** Durable boundary invoked after each successful Firecrawl query. */
+    onFirecrawlQuery?: (contribution: ProviderContribution) => Promise<void>;
     /** Durable boundary invoked after each successful Tavily query. */
     onTavilyQuery?: (contribution: ProviderContribution) => Promise<void>;
     resolveCompanyLinkedinUrl?: () => Promise<string | null>;
@@ -228,12 +262,7 @@ export class DiscoverPeopleProviderOrchestrator {
     });
     const identities = input.excluded ?? new PersonIdentitySet();
     const contributions: ProviderContribution[] = [];
-    const tavilyPeople: ResolvedCachePerson[] = [];
     const brightPeople: ResolvedCachePerson[] = [];
-    const aggregateTavilyDiagnostics = emptyTavilyDiagnostics();
-    let tavilyDiagnostics: TavilyProfileDiagnostics | null = null;
-    let tavilyStatus: ProviderChainDiagnostics["tavilyStatus"] = this.tavily.configured ? "ZERO_RESULTS" : "DISABLED";
-    let tavilyFailure: ReturnType<typeof tavilyFailureEvent> | null = null;
     const aggregateBrightDiagnostics = emptyBrightDiagnostics();
     let brightDiagnostics: BrightProfileDiagnostics | null = null;
     let brightStatus: ProviderChainDiagnostics["brightStatus"] = this.bright.configured ? "ZERO_RESULTS" : "DISABLED";
@@ -258,12 +287,6 @@ export class DiscoverPeopleProviderOrchestrator {
       1,
       Math.floor(input.tavilyQueryAttemptLimit ?? this.tavilyMaxQueriesPerAction)
     );
-    let tavilyEndQueryIndex = tavilyStartQueryIndex;
-    let tavilyQueriesAttempted = 0;
-    let tavilyQueriesSucceeded = 0;
-    let tavilyPeoplePersisted = 0;
-    let tavilyNextQueryIndex = tavilyStartQueryIndex;
-    let tavilyExhausted = (input.tavilyExhausted ?? false) || tavilyStartQueryIndex >= tavilyPlan.length;
     const brightPageAttemptLimit = Math.max(
       1,
       Math.floor(input.brightPageAttemptLimit ?? this.brightMaxPages)
@@ -284,111 +307,55 @@ export class DiscoverPeopleProviderOrchestrator {
       (typeof input.deadlineAtMs === "number" &&
         input.deadlineAtMs - Date.now() <= this.minimumRemainingBudgetMs);
 
-    if (!this.tavily.configured && !tavilyExhausted) tavilyFailure = "TAVILY_AUTH_ERROR";
-    if (this.tavily.configured && !tavilyExhausted) {
-      safeEvent("DISCOVER_TAVILY_STARTED", {
-        searchId: input.searchId,
-        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
-        tavilyStartQueryIndex,
-        tavilyQueriesFetched,
-        tavilyExhausted: false,
-        desiredCount,
-        unusedDurableCount: input.unusedDurableCount ?? 0
-      });
-      while (
-        tavilyPeople.length < desiredCount &&
-        tavilyNextQueryIndex < tavilyPlan.length &&
-        tavilyQueriesAttempted < tavilyQueryAttemptLimit
-      ) {
-        if (parentDeadlineReached()) break;
-        const queryIndex = tavilyNextQueryIndex;
-        tavilyEndQueryIndex = queryIndex;
-        tavilyQueriesAttempted += 1;
-        let result: Awaited<ReturnType<TavilyProfileSearchProvider["searchProfiles"]>>;
-        try {
-          result = await this.tavily.searchProfiles({
-            companyName: input.companyName,
-            locations: input.requestedLocations,
-            query: tavilyPlan[queryIndex],
-            signal: input.signal
-          });
-        } catch (error) {
-          if (!parentDeadlineReached()) tavilyFailure = tavilyFailureEvent(error);
-          tavilyStatus = "FAILED";
-          break;
-        }
-        tavilyQueriesSucceeded += 1;
-        addTavilyDiagnostics(aggregateTavilyDiagnostics, result.diagnostics);
-        tavilyDiagnostics = aggregateTavilyDiagnostics;
-        if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
-        const processed = await this.buildPeople(result.profiles, input, "CACHE");
-        const roleRejected = Math.max(0, result.profiles.length - processed.length);
-        aggregateTavilyDiagnostics.roleRejected += roleRejected;
-        const unique = processed.filter((person) => identities.addIfNew(person));
-        aggregateTavilyDiagnostics.duplicateRejected += processed.length - unique.length;
-        tavilyPeople.push(...unique);
-        tavilyNextQueryIndex = queryIndex + 1;
-        tavilyExhausted = tavilyNextQueryIndex >= tavilyPlan.length;
-        const contribution: ProviderContribution = {
-          provider: "TAVILY",
-          people: unique,
-          nextPage: tavilyNextQueryIndex,
-          pagesFetched: 1,
-          exhausted: tavilyExhausted,
-          providerRunId: null,
-          providerDatasetId: null,
-          providerTotalFound: result.diagnostics.rawTavilyResults,
-          providerResultCount: result.profiles.length
-        };
-        contributions.push(contribution);
-        if (input.onTavilyQuery) {
-          await input.onTavilyQuery(contribution);
-          tavilyPeoplePersisted += unique.length;
-        }
-        safeEvent("DISCOVER_TAVILY_QUERY_RESULTS", {
-          searchId: input.searchId,
-          canonicalCompanyKey: input.canonicalCompanyKey ?? null,
-          queryIndex,
-          tavilyNextQueryIndex,
-          tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
-          tavilyExhausted,
-          ...result.diagnostics,
-          roleRejected,
-          tavilyValidUnique: unique.length,
-          totalTavilyValidUnique: tavilyPeople.length,
-          tavilyPeoplePersisted,
-          desiredCount
-        });
-      }
-      if (!tavilyFailure && !parentDeadlineReached()) {
-        tavilyStatus = tavilyPeople.length > 0
-          ? "RESULTS"
-          : aggregateTavilyDiagnostics.rawTavilyResults > 0
-            ? "RESULTS_REJECTED"
-            : "ZERO_RESULTS";
-      }
-      safeEvent("DISCOVER_TAVILY_RESULTS", {
-        searchId: input.searchId,
-        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
-        tavilyStartQueryIndex,
-        tavilyEndQueryIndex,
-        tavilyQueriesAttempted,
-        tavilyQueriesSucceeded,
-        tavilyNextQueryIndex,
-        tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
-        tavilyExhausted,
-        rawTavilyResults: aggregateTavilyDiagnostics.rawTavilyResults,
-        tavilyValidUnique: tavilyPeople.length,
-        tavilyPeoplePersisted,
-        desiredCount
-      });
-    }
+    const firecrawlStartQueryIndex = Math.max(0, Math.floor(input.firecrawlStartQueryIndex ?? 0));
+    const firecrawlQueriesFetched = input.firecrawlQueriesFetched ?? 0;
+    const firecrawlPlan = buildFirecrawlPeopleQueryPlan({
+      companyName: input.companyName, providerTitles: titles, locations: input.requestedLocations, maxQueries: this.firecrawlMaxQueries
+    });
+    const common = {
+      desiredCount, identities, parentDeadlineReached, contributions,
+      buildPeople: (profiles: NormalizedProfile[]) => this.buildPeople(profiles, input, "CACHE"),
+      onProfilesDiscovered: input.onProfilesDiscovered, searchId: input.searchId,
+      canonicalCompanyKey: input.canonicalCompanyKey, unusedDurableCount: input.unusedDurableCount
+    };
+    const firecrawl = await runPublicProfileQueryPlan({
+      ...common, provider: "FIRECRAWL", configured: this.firecrawl.configured, skipped: input.skipFirecrawl,
+      plan: firecrawlPlan, startQueryIndex: firecrawlStartQueryIndex, queriesFetched: firecrawlQueriesFetched,
+      exhausted: input.firecrawlExhausted ?? false,
+      attemptLimit: Math.max(1, Math.floor(input.firecrawlQueryAttemptLimit ?? this.firecrawlMaxQueriesPerAction)),
+      emptyDiagnostics: { ...emptyPublicProfileDiagnostics(), rawFirecrawlResults: 0, creditsUsed: 0 },
+      rawCount: (counts) => counts.rawFirecrawlResults,
+      search: (query) => this.firecrawl.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations, query, signal: input.signal, deadlineAtMs: input.deadlineAtMs }),
+      failureEvent: firecrawlFailureEvent, availabilityFailure: "FIRECRAWL_AUTH_ERROR", persist: input.onFirecrawlQuery
+    });
+    // As with existing providers, successful partial exhausted results end this action.
+    // A later explicit opportunity proceeds downstream after durable people are consumed.
+    const tavilyEligible = !parentDeadlineReached() && (Boolean(input.skipFirecrawl) ||
+      Boolean(firecrawl.failure) || (firecrawl.exhausted && firecrawl.people.length === 0));
+    if (tavilyEligible) safeEvent("DISCOVER_FIRECRAWL_FALLBACK_TO_TAVILY", {
+      searchId: input.searchId, canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+      firecrawlFailure: firecrawl.failure, firecrawlNextQueryIndex: firecrawl.nextQueryIndex,
+      firecrawlQueriesFetched: firecrawlQueriesFetched + firecrawl.succeeded, firecrawlExhausted: firecrawl.exhausted,
+      firecrawlValidUnique: firecrawl.people.length, firecrawlSkipped: Boolean(input.skipFirecrawl)
+    });
+    const tavily = await runPublicProfileQueryPlan({
+      ...common, provider: "TAVILY", configured: this.tavily.configured, skipped: !tavilyEligible,
+      desiredCount: Math.max(1, desiredCount - firecrawl.people.length),
+      plan: tavilyPlan, startQueryIndex: tavilyStartQueryIndex, queriesFetched: tavilyQueriesFetched,
+      exhausted: input.tavilyExhausted ?? false, attemptLimit: tavilyQueryAttemptLimit,
+      emptyDiagnostics: emptyTavilyDiagnostics(), rawCount: (counts) => counts.rawTavilyResults,
+      search: (query) => this.tavily.searchProfiles({ companyName: input.companyName, locations: input.requestedLocations, query, signal: input.signal }),
+      failureEvent: tavilyFailureEvent, availabilityFailure: "TAVILY_AUTH_ERROR", persist: input.onTavilyQuery
+    });
+    const { people: tavilyPeople, diagnostics: tavilyDiagnostics, status: tavilyStatus, failure: tavilyFailure,
+      nextQueryIndex: tavilyNextQueryIndex, endQueryIndex: tavilyEndQueryIndex, attempted: tavilyQueriesAttempted,
+      succeeded: tavilyQueriesSucceeded, persisted: tavilyPeoplePersisted, exhausted: tavilyExhausted } = tavily;
 
     const tavilyParentBudgetSpent = parentDeadlineReached();
-    const brightEligible = !tavilyParentBudgetSpent && (
+    const brightEligible = tavilyEligible && !tavilyParentBudgetSpent && (
       Boolean(tavilyFailure) || (tavilyExhausted && tavilyPeople.length === 0)
     );
-    const brightDesiredCount = Math.max(1, desiredCount - tavilyPeople.length);
+    const brightDesiredCount = Math.max(1, desiredCount - firecrawl.people.length - tavilyPeople.length);
     if (brightEligible) {
       safeEvent("DISCOVER_TAVILY_FALLBACK_TO_BRIGHT", {
         searchId: input.searchId,
@@ -622,6 +589,13 @@ export class DiscoverPeopleProviderOrchestrator {
     }
     const shouldCallApify = apifyFallbackNeeded && !parentDeadlineReached() && Boolean(companyLinkedinUrl);
     safeEvent("DISCOVER_PROVIDER_DECISION", {
+      firecrawlStartQueryIndex,
+      firecrawlNextQueryIndex: firecrawl.nextQueryIndex,
+      firecrawlQueriesFetched: firecrawlQueriesFetched + firecrawl.succeeded,
+      firecrawlExhausted: firecrawl.exhausted,
+      firecrawlFailure: firecrawl.failure,
+      firecrawlValidUnique: firecrawl.people.length,
+      firecrawlPeoplePersisted: firecrawl.persisted,
       searchId: input.searchId,
       canonicalCompanyKey: input.canonicalCompanyKey ?? null,
       unusedDurableCount: input.unusedDurableCount ?? 0,
@@ -677,7 +651,7 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyFallbackReason
       });
     }
-    if (apifyFallbackNeeded && !parentDeadlineReached() && !companyLinkedinUrl && brightPeople.length === 0) {
+    if (apifyFallbackNeeded && !parentDeadlineReached() && !companyLinkedinUrl && firecrawl.people.length + tavilyPeople.length + brightPeople.length === 0) {
       throw new ApifyCompanyTargetingError();
     }
     if (shouldCallApify) {
@@ -731,7 +705,7 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyPagesFetched: apifyPagesFetched + 1,
         apifyExhausted: apify.profiles.length === 0 || apify.totalFound < input.maxResults,
         apifyNewUnique: apifyPeople.length,
-        finalUniqueCount: tavilyPeople.length + brightPeople.length + apifyPeople.length,
+        finalUniqueCount: firecrawl.people.length + tavilyPeople.length + brightPeople.length + apifyPeople.length,
         unusedDurableCount: input.unusedDurableCount ?? 0,
         brightRawResults: rawBrightResults,
         brightPeoplePersisted,
@@ -739,11 +713,27 @@ export class DiscoverPeopleProviderOrchestrator {
       });
     }
 
-    const people = [...tavilyPeople, ...brightPeople, ...apifyPeople].slice(0, desiredCount);
+    const people = [...firecrawl.people, ...tavilyPeople, ...brightPeople, ...apifyPeople].slice(0, desiredCount);
     return {
       people,
       contributions,
       diagnostics: {
+        continuationPending: people.length < desiredCount && (
+          (!input.skipFirecrawl && this.firecrawl.configured && !firecrawl.exhausted && !firecrawl.failure) ||
+          (tavilyEligible && this.tavily.configured && !tavilyExhausted && !tavilyFailure)
+        ),
+        firecrawlStatus: firecrawl.status,
+        firecrawlFailureEvent: firecrawl.failure,
+        firecrawl: firecrawl.diagnostics,
+        firecrawlValidUnique: firecrawl.people.length,
+        firecrawlStartQueryIndex,
+        firecrawlEndQueryIndex: firecrawl.endQueryIndex,
+        firecrawlQueriesAttempted: firecrawl.attempted,
+        firecrawlQueriesSucceeded: firecrawl.succeeded,
+        firecrawlNextQueryIndex: firecrawl.nextQueryIndex,
+        firecrawlQueriesFetched: firecrawlQueriesFetched + firecrawl.succeeded,
+        firecrawlExhausted: firecrawl.exhausted,
+        firecrawlPeoplePersisted: firecrawl.persisted,
         tavilyStatus,
         tavilyFailureEvent: tavilyFailure,
         tavily: tavilyDiagnostics,

@@ -1039,21 +1039,44 @@ export class ProspectSearchService {
           companyLinkedinUrl: resolution.linkedinCompanyUrl
         });
         let state = await durableKnowledge.getExpansionState(fingerprint);
-        const provider = await this.runProviderDataset(
-          userId,
-          search,
-          company,
-          resolution,
-          budget,
-          excluded,
-          state,
-          request,
-          async (contribution) => {
+        const persistContribution = async (contribution: ProviderContribution) => {
+          state = await durableKnowledge.appendProviderPeople({
+            fingerprint, fingerprintInput, company: resolvedCompany,
+            emailFormat: this.companyResolvedEmailFormat(company), people: contribution.people,
+            nextPage: contribution.nextPage, pagesFetched: contribution.pagesFetched, exhausted: contribution.exhausted,
+            provider: contribution.provider, providerRunId: contribution.providerRunId, providerDatasetId: contribution.providerDatasetId
+          });
+        };
+        let provider: ProviderDatasetResult;
+        let skipFailedFirecrawl = false;
+        do {
+          if (request.signal.aborted || request.deadlineAtMs - Date.now() <= 5_000) {
+            throw new ProspectError("PROVIDER_TIMEOUT", "Public people discovery has unfinished work. Try again to resume.");
+          }
+          const previousProgress = (state?.firecrawlQueriesFetched ?? 0) + (state?.tavilyQueriesFetched ?? 0);
+          provider = await this.runProviderDataset(
+            userId,
+            search,
+            company,
+            resolution,
+            budget,
+            excluded,
+            state,
+            request,
+            persistContribution,
+            Math.max(1, resolveResultsPerSearch() - (state?.people.length ?? 0)),
+            skipFailedFirecrawl
+          );
+          skipFailedFirecrawl ||= Boolean(provider.diagnostics.firecrawlFailureEvent);
+          resolvedCompany.linkedinUrl = resolution.linkedinCompanyUrl;
+          for (const contribution of provider.contributions.filter(
+            (entry) => entry.provider !== "FIRECRAWL" && entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
+          )) {
             state = await durableKnowledge.appendProviderPeople({
               fingerprint,
               fingerprintInput,
               company: resolvedCompany,
-              emailFormat: this.companyResolvedEmailFormat(company),
+              emailFormat: provider.dataset.emailFormat,
               people: contribution.people,
               nextPage: contribution.nextPage,
               pagesFetched: contribution.pagesFetched,
@@ -1063,28 +1086,14 @@ export class ProspectSearchService {
               providerDatasetId: contribution.providerDatasetId
             });
           }
-        );
-        resolvedCompany.linkedinUrl = resolution.linkedinCompanyUrl;
-        for (const contribution of provider.contributions.filter(
-          (entry) => entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
-        )) {
-          state = await durableKnowledge.appendProviderPeople({
-            fingerprint,
-            fingerprintInput,
-            company: resolvedCompany,
-            emailFormat: provider.dataset.emailFormat,
-            people: contribution.people,
-            nextPage: contribution.nextPage,
-            pagesFetched: contribution.pagesFetched,
-            exhausted: contribution.exhausted,
-            provider: contribution.provider,
-            providerRunId: contribution.providerRunId,
-            providerDatasetId: contribution.providerDatasetId
-          });
-        }
-        if (!state) {
-          throw new ProspectError("PROVIDER_ERROR", "Public people discovery did not produce durable state.");
-        }
+          if (!state) {
+            throw new ProspectError("PROVIDER_ERROR", "Public people discovery did not produce durable state.");
+          }
+          if (provider.diagnostics.continuationPending && state.people.length < resolveResultsPerSearch() &&
+              (state.firecrawlQueriesFetched ?? 0) + (state.tavilyQueriesFetched ?? 0) <= previousProgress) {
+            throw new ProspectError("PROVIDER_TIMEOUT", "Public people discovery has unfinished work. Try again to resume.");
+          }
+        } while (provider.diagnostics.continuationPending && state.people.length < resolveResultsPerSearch());
         if (state.people.length === 0) {
           logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_NO_RESULTS", {
             canonicalCompanyKey: fingerprintInput.companyKey,
@@ -1117,8 +1126,7 @@ export class ProspectSearchService {
       });
     }
 
-    // 4) A provider-backed zero is terminal for this request. Never loop the
-    // provider trying to force a full batch.
+    // 4) Successful query continuation has finished or filled the action target.
     if (cacheResult.dataset.people.length === 0) {
       logDiscoverZeroResultEvent(search.id, userId, providerCalled);
       const updated = await this.prisma.prospectSearch.update({
@@ -1317,9 +1325,11 @@ export class ProspectSearchService {
     excluded: PersonIdentitySet,
     continuation: Awaited<ReturnType<DiscoverPublicKnowledgeService["getExpansionState"]>>,
     request?: { signal: AbortSignal; deadlineAtMs: number },
-    persistIncrementalContribution?: (contribution: ProviderContribution) => Promise<void>
+    persistIncrementalContribution?: (contribution: ProviderContribution) => Promise<void>,
+    desiredCount?: number,
+    skipFirecrawlForAction = false
   ): Promise<ProviderDatasetResult> {
-    // Tavily runs first using deterministic query-index continuation. Bright
+    // Firecrawl then Tavily use deterministic query-index continuation. Bright
     // and then Apify are eligible only on true exhaustion or temporary failure.
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const resultLimit = resolveResultsPerSearch();
@@ -1331,7 +1341,11 @@ export class ProspectSearchService {
       requestedTitles,
       requestedLocations: this.asStringArray(search.requestedLocations),
       maxResults: candidateLimit,
-      desiredCount: resultLimit,
+      desiredCount: desiredCount ?? resultLimit,
+      firecrawlStartQueryIndex: continuation?.firecrawlNextQueryIndex ?? 0,
+      firecrawlQueriesFetched: continuation?.firecrawlQueriesFetched ?? 0,
+      firecrawlExhausted: continuation?.firecrawlExhausted ?? false,
+      skipFirecrawl: skipFirecrawlForAction || continuation?.providerChainVersion === 1,
       tavilyStartQueryIndex: continuation?.tavilyNextQueryIndex ?? 0,
       brightStartPage: continuation?.brightNextPage ?? 1,
       apifyStartPage: continuation?.apifyNextPage ?? continuation?.providerNextPage ?? 1,
@@ -1354,6 +1368,7 @@ export class ProspectSearchService {
       budget,
       searchId: search.id,
       onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS"),
+      onFirecrawlQuery: persistIncrementalContribution,
       onTavilyQuery: persistIncrementalContribution,
       onBrightPage: persistIncrementalContribution,
       resolveCompanyLinkedinUrl: async () => {
@@ -1382,25 +1397,32 @@ export class ProspectSearchService {
       userId,
       source: "PROVIDER",
       itemsReturned:
+        (chain.diagnostics.firecrawl?.rawFirecrawlResults ?? 0) +
         (chain.diagnostics.tavily?.rawTavilyResults ?? 0) +
         (chain.diagnostics.bright?.rawBrightResults ?? 0) +
         (chain.diagnostics.apify?.itemsReturned ?? 0),
       parsedCandidates:
+        (chain.diagnostics.firecrawl?.linkedInCandidates ?? 0) +
         (chain.diagnostics.tavily?.linkedInCandidates ?? 0) +
         (chain.diagnostics.bright?.linkedInCandidates ?? 0) +
         (chain.diagnostics.apify?.parsedCandidates ?? 0),
       rejectedBySchema: chain.diagnostics.apify?.rejectedBySchema ?? 0,
       duplicateItems:
+        (chain.diagnostics.firecrawl?.duplicateRejected ?? 0) +
         (chain.diagnostics.tavily?.duplicateRejected ?? 0) +
         (chain.diagnostics.bright?.duplicateRejected ?? 0) +
         (chain.diagnostics.apify?.duplicateItems ?? 0),
       companyMatched:
+        (chain.diagnostics.firecrawl?.currentEmploymentAccepted ?? 0) +
         (chain.diagnostics.tavily?.currentEmploymentAccepted ?? 0) +
         (chain.diagnostics.bright?.currentEmploymentAccepted ?? 0) +
         (chain.diagnostics.apify?.companyMatched ?? 0),
       rejectedByCompany:
+        (chain.diagnostics.firecrawl?.formerEmployeeRejected ?? 0) +
         (chain.diagnostics.tavily?.formerEmployeeRejected ?? 0) +
+        (chain.diagnostics.firecrawl?.companyContradictionRejected ?? 0) +
         (chain.diagnostics.tavily?.companyContradictionRejected ?? 0) +
+        (chain.diagnostics.firecrawl?.companyInsufficientRejected ?? 0) +
         (chain.diagnostics.tavily?.companyInsufficientRejected ?? 0) +
         (chain.diagnostics.bright?.formerEmployeeRejected ?? 0) +
         (chain.diagnostics.bright?.companyContradictionRejected ?? 0) +

@@ -41,7 +41,7 @@ import {
   type DiscoverRoleIntelligencePort
 } from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
-import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discover-people-provider-orchestrator";
+import { DiscoverPeopleProviderOrchestrator, type ProviderContribution } from "@/services/prospects/discover-people-provider-orchestrator";
 import { createAiBudget } from "@/services/prospects/prospect-ai";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 import { normalizeDomain } from "@/services/prospects/prospect-normalization";
@@ -366,6 +366,7 @@ export class DiscoverExpansionService {
         (person) => !identities.has(person) && databaseIdentities.addIfNew(person)
       );
       const providerExhausted =
+        (cacheState?.providerChainVersion === 1 || !this.providerOrchestrator.firecrawlConfigured || (cacheState?.firecrawlExhausted ?? false)) &&
         (!this.providerOrchestrator.tavilyConfigured || (cacheState?.tavilyExhausted ?? false)) &&
         (!this.providerOrchestrator.brightConfigured || (cacheState?.brightExhausted ?? false)) &&
         (cacheState?.apifyExhausted ?? cacheState?.providerExhausted ?? false);
@@ -663,7 +664,7 @@ export class DiscoverExpansionService {
 
   /**
    * Materialize cached unused people first; if still short and the provider is
-   * not exhausted, continue the Apify search from its saved page under the shared
+   * not exhausted, resume the external provider chain from its saved cursors under the shared
    * per-fingerprint lock (at most one provider continuation per canonical query).
    */
   private async collectNewPeople(params: {
@@ -705,7 +706,8 @@ export class DiscoverExpansionService {
     }
 
     // 11. No unused database people remain. Run one bounded provider action:
-    // Bright advances from its saved SERP page. Apify is eligible only after
+    // Firecrawl/Tavily resume saved query indices; Bright resumes saved SERP pages.
+    // Apify is eligible only after
     // true Bright exhaustion or as a temporary Bright-failure fallback.
     if (!exhausted && this.maxProviderPages > 0) {
       const budget = createAiBudget();
@@ -742,11 +744,13 @@ export class DiscoverExpansionService {
         // A database-only initial search may have no exact continuation row. In
         // that case this explicit user action starts at page 1. When metadata
         // exists, always honor its saved next page (including old cache rows).
+        const firecrawlQueryIndex = rechecked?.firecrawlNextQueryIndex ?? 0;
         const tavilyQueryIndex = rechecked?.tavilyNextQueryIndex ?? 0;
         const brightPage = rechecked?.brightNextPage ?? 1;
         const apifyPage = rechecked?.apifyNextPage ?? rechecked?.providerNextPage ?? 1;
         const cachedPeopleCount = rechecked?.people.length ?? 0;
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
+          firecrawlQueryIndex,
           tavilyQueryIndex,
           brightPage,
           apifyPage,
@@ -765,6 +769,21 @@ export class DiscoverExpansionService {
         let updated = rechecked;
         const providerActionStartedAt = Date.now();
         const providerSignal = AbortSignal.timeout(PROVIDER_ACTION_TIMEOUT_MS);
+        const persistContribution = async (contribution: ProviderContribution) => {
+          updated = await this.cache.appendProviderPeople({
+            fingerprint: params.fingerprint,
+            fingerprintInput: params.fingerprintInput,
+            company: params.cacheCompany,
+            emailFormat: params.cacheEmailFormat,
+            people: contribution.people,
+            nextPage: contribution.nextPage,
+            pagesFetched: contribution.pagesFetched,
+            exhausted: contribution.exhausted,
+            provider: contribution.provider,
+            providerRunId: contribution.providerRunId,
+            providerDatasetId: contribution.providerDatasetId
+          });
+        };
         const chain = await this.providerOrchestrator.discover({
           companyName: params.company.officialName ?? params.company.name,
           companyLinkedinUrl: params.company.linkedinUrl,
@@ -772,6 +791,10 @@ export class DiscoverExpansionService {
           requestedLocations: params.locations,
           maxResults: PROVIDER_PAGE_SIZE,
           desiredCount: this.batchSize,
+          firecrawlStartQueryIndex: firecrawlQueryIndex,
+          firecrawlQueriesFetched: rechecked?.firecrawlQueriesFetched ?? 0,
+          firecrawlExhausted: rechecked?.firecrawlExhausted ?? false,
+          skipFirecrawl: rechecked?.providerChainVersion === 1,
           tavilyStartQueryIndex: tavilyQueryIndex,
           brightStartPage: brightPage,
           apifyStartPage: apifyPage,
@@ -789,36 +812,9 @@ export class DiscoverExpansionService {
           excluded: providerExcluded,
           budget,
           searchId: params.search.id,
-          onTavilyQuery: async (contribution) => {
-            updated = await this.cache.appendProviderPeople({
-              fingerprint: params.fingerprint,
-              fingerprintInput: params.fingerprintInput,
-              company: params.cacheCompany,
-              emailFormat: params.cacheEmailFormat,
-              people: contribution.people,
-              nextPage: contribution.nextPage,
-              pagesFetched: contribution.pagesFetched,
-              exhausted: contribution.exhausted,
-              provider: contribution.provider,
-              providerRunId: contribution.providerRunId,
-              providerDatasetId: contribution.providerDatasetId
-            });
-          },
-          onBrightPage: async (contribution) => {
-            updated = await this.cache.appendProviderPeople({
-              fingerprint: params.fingerprint,
-              fingerprintInput: params.fingerprintInput,
-              company: params.cacheCompany,
-              emailFormat: params.cacheEmailFormat,
-              people: contribution.people,
-              nextPage: contribution.nextPage,
-              pagesFetched: contribution.pagesFetched,
-              exhausted: contribution.exhausted,
-              provider: contribution.provider,
-              providerRunId: contribution.providerRunId,
-              providerDatasetId: contribution.providerDatasetId
-            });
-          },
+          onFirecrawlQuery: persistContribution,
+          onTavilyQuery: persistContribution,
+          onBrightPage: persistContribution,
           resolveCompanyLinkedinUrl: () => this.resolveAndPersistCompanyLinkedinUrl(
             params.company,
             params.search.id,
@@ -830,7 +826,7 @@ export class DiscoverExpansionService {
         // retaining the domain-based fingerprint/canonical company identity.
         params.cacheCompany.linkedinUrl = params.company.linkedinUrl;
         for (const contribution of chain.contributions.filter(
-          (entry) => entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
+          (entry) => entry.provider !== "FIRECRAWL" && entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
         )) {
           updated = await this.cache.appendProviderPeople({
             fingerprint: params.fingerprint,
@@ -857,13 +853,15 @@ export class DiscoverExpansionService {
           }
         }
         const collectedCount = collected.length - collectedBeforePage;
+        const firecrawlExhausted = updated.providerChainVersion === 1 || !this.providerOrchestrator.firecrawlConfigured || (updated.firecrawlExhausted ?? false);
         const tavilyExhausted = !this.providerOrchestrator.tavilyConfigured || (updated.tavilyExhausted ?? false);
         const brightExhausted = !this.providerOrchestrator.brightConfigured || (updated.brightExhausted ?? false);
         const apifyExhausted = updated.apifyExhausted ?? updated.providerExhausted;
-        exhausted = tavilyExhausted && brightExhausted && apifyExhausted;
+        exhausted = firecrawlExhausted && tavilyExhausted && brightExhausted && apifyExhausted;
         const apifyContribution = chain.contributions.find((entry) => entry.provider === "APIFY");
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
           page: apifyPage,
+          firecrawlQueryIndex,
           tavilyQueryIndex,
           brightPage,
           apifyPage,
@@ -876,6 +874,8 @@ export class DiscoverExpansionService {
             0,
             (apifyContribution?.providerResultCount ?? 0) - (apifyContribution?.people.length ?? 0)
           ),
+          rawFirecrawlResults: chain.diagnostics.firecrawl?.rawFirecrawlResults ?? 0,
+          firecrawlValidUnique: chain.diagnostics.firecrawlValidUnique,
           rawTavilyResults: chain.diagnostics.tavily?.rawTavilyResults ?? 0,
           tavilyValidUnique: chain.diagnostics.tavilyValidUnique,
           rawBrightResults: chain.diagnostics.bright?.rawBrightResults ?? 0,

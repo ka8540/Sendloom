@@ -227,9 +227,9 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 `/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility).
 
-The people pipeline is **Redis → permanent Postgres knowledge → Bright Data Google SERP → Apify fallback**. Redis caches sanitized exact-intent result payloads and is never required for correctness. `DiscoverPublicPerson`, `DiscoverProviderBatch`, and `DiscoverProviderBatchPerson` keep public provider-backed people and their exact role/location/provider provenance permanently; age never makes a person unusable. A normal search returns any matching Postgres people as-is (even 1–9) with zero external calls. Only a true Redis miss plus Postgres zero starts external discovery. Three or more valid unique Bright results suppress Apify; zero, one, or two trigger one Apify fallback and the valid Bright people are retained and merged first.
+The people pipeline is **permanent Postgres knowledge → Firecrawl → Tavily → Bright Data Google SERP → Apify**. Redis accelerates sanitized exact-intent reads and never becomes authoritative. `DiscoverPublicPerson`, `DiscoverProviderBatch`, and `DiscoverProviderBatchPerson` permanently store public people, intent membership, provenance, and independent provider cursors. A normal search returns existing matching people first, even a partial batch, without external discovery. Firecrawl returns public search metadata candidates only: Sendloom validates canonical LinkedIn identity, current employment, role semantics, location, and duplicates before persistence. All valid unique people are persisted; only the requested subset is allocated.
 
-**Add 10 more** follows the same order and excludes people already granted to that search. Any unused permanent DB people—even a partial remainder—end that action without an Apify top-up. A later Add More may call one provider page only after unused matching Postgres people reach zero. `ProspectSearchPerson` grants remain the private source of truth for user-visible counts and deduplication.
+**Add 10 more** follows the same order and excludes people already granted to that search. Any unused permanent DB people—even a partial remainder—end that action without an Apify top-up. A later Add More may resume a bounded provider action only after unused matching Postgres people reach zero. `ProspectSearchPerson` grants remain the private source of truth for user-visible counts and deduplication.
 
 Discover company identity is domain-first everywhere: normalized official domain → trusted LinkedIn company slug when no official domain exists → normalized company name when neither exists. The migration promotes historical `linkedin:*` rows under the domain identity when their stored trusted domain is available, while retaining the LinkedIn slug as evidence. For same-company reuse, an exact normalized role-and-location intent reuses the provider-backed entry directly without reclassifying individual people. Any different role or geography still runs the strict person-level policy, so provenance is never carried across requests such as Software Engineer → Recruiter or United States → San Francisco.
 
@@ -241,7 +241,9 @@ The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCac
 | --- | --- | --- |
 | Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
 | Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
-| Bright Data / Google SERP | First external public-people discovery after a true permanent-DB zero | Uses public Google result evidence only. Location is persisted only when supported by public evidence (with the strict single-country fallback); enrichment is bounded. |
+| Firecrawl | First external provider after permanent-DB zero | Metadata-only web Search, default 50 raw results per query; strict shared validation and durable query-index continuation. |
+| Tavily | Fallback after Firecrawl exhaustion or availability failure | Existing bounded title-plan queries and durable query-index continuation. |
+| Bright Data / Google SERP | Fallback after Tavily exhaustion or availability failure | Uses public Google result evidence only. Location is persisted only when supported by public evidence (with the strict single-country fallback); enrichment is bounded. |
 | Apify | Trusted continuation after Bright is truly exhausted, or temporary availability fallback when Bright fails | Called at most once per normal search or Add More action. It is never selected by a Bright result-count threshold and never fills a partial DB batch. |
 
 The public/private boundary is intentional. Shared durable rows contain public profile identity, public title/location, normalized company evidence, and provider provenance. They never contain a requester `userId`, inferred/generated email, saved/selected/export state, suppression state, manual corrections, notes, or another user's history. Reused people are copied into the requesting user's own tenant-scoped company/person/allocation records before they are returned.
@@ -250,62 +252,55 @@ The public/private boundary is intentional. Shared durable rows contain public p
 
 ```mermaid
 flowchart TD
-    A[Resolve canonical company and normalize role/location] --> B{Valid Redis exact-intent payload?}
-    B -- Yes --> C[Materialize this user's private allocation]
-    B -- No / unavailable --> D{Permanent Postgres knowledge has compatible people?}
-    D -- Yes: any count --> E[Return up to normal limit and repopulate Redis]
-    D -- No --> F[Acquire short intent lock]
-    F --> G[Recheck Redis and Postgres]
-    G -- Another request persisted people --> C
-    G -- Still zero --> H[Call Bright Data Google SERP]
-    H --> I{Bright outcome}
-    I -- Any valid people --> M[Persist all Bright people and return requested subset]
-    I -- Truly exhausted with no people --> K[Call company-targeted Apify once]
-    I -- API failure --> K
-    K --> L[Persist all valid Apify people and return requested subset]
-    M --> J[Increment company version and cache sanitized result]
-    L --> J
-    J --> C
+    A[Resolve company and normalize intent] --> B[Read durable Postgres people via optional Redis cache]
+    B --> C{Any usable people?}
+    C -- Yes --> D[Allocate requested subset privately]
+    C -- No --> E[Lock intent and recheck durable knowledge]
+    E --> F[Firecrawl metadata search]
+    F --> G[Validate and persist ALL valid unique people]
+    G --> H{Enough people or positive exhausted batch?}
+    H -- Yes --> D
+    H -- More query work --> F
+    H -- Exhausted empty or availability failure --> I[Tavily]
+    I -- Validated persisted people --> D
+    I -- Remaining queries --> I
+    I -- Exhausted empty or availability failure --> J[Bright Data]
+    J -- Validated persisted people --> D
+    J -- Exhausted empty or availability failure --> K[Company-targeted Apify]
+    K --> L[Validate and persist all valid people]
+    L --> D
 ```
 
 Important consequences:
 
-- A Redis hit performs no public-person Postgres lookup and makes no external provider call.
-- A Postgres result of 1, 3, 7, or 10 people returns that count; the service does not buy more data to reach 10.
-- A true Redis miss plus permanent-DB zero starts Bright Data. Any valid Bright count—including one or two—stops the action without Apify.
-- Bright may scan several bounded saved pages, including pages with raw rows but zero valid people. Only a true empty page, the configured hard page limit, or a reliable provider end signal marks it exhausted.
-- Apify runs only after persisted Bright exhaustion with no newly discovered Bright people, or as a temporary fallback for a classified Bright timeout/auth/provider/malformed-response failure. A failure never advances or exhausts Bright, so a future action retries the same Bright page.
-- Any final count is returned as-is. Provider results beyond the display limit are all persisted for later DB-first reuse.
-- An exact stored provider intent is authoritative provenance. For example, an exact `Software Engineer + United States` batch can safely reuse a provider-returned person with incomplete per-person geography. A narrower or different request still needs strict candidate evidence.
+- Cached Postgres people are always used before paid external discovery. Redis is optional.
+- Firecrawl Search defaults to **50 raw results per query**, not 50 authorized people. Result-page scraping is disabled, `scrapeOptions` is omitted, and only `data.web` metadata is consumed.
+- Query 0 uses the exact first requested title; later queries use the existing authorized provider title plan. Company aliases, escaping, and location clauses use shared query builders.
+- A successful query advances its durable index, including empty or fully rejected results. An action cap or parent deadline never marks the provider exhausted.
+- Initial background discovery resumes successful unfinished Firecrawl/Tavily work under the same parent deadline until its target is filled or its bounded plan is consumed. A spent deadline with unfinished work produces a retryable failure and preserves the people/cursors.
+- Fallback follows exhaustion or safe availability failure, never a low-result threshold. As on the existing chain, a positive exhausted provider batch is returned first; the next explicit provider opportunity may proceed downstream after that batch is consumed.
+- Firecrawl failures leave the failed query unconsumed and allow Tavily for that action while the parent budget permits. There is no immediate retry loop or extra user quota reservation.
+- All valid unique people are persisted before the requested subset is allocated. Exact intent provenance, company/role/location policy, tenant isolation, and quota identity are unchanged.
 
-#### Add More / Find More
+#### Add 10 more order
 
-Add More computes identities already granted to the selected user-owned search, then looks for compatible public people the search has not received:
+1. Return unused durable matching people first, even a partial remainder, without buying a top-up.
+2. Only a later explicit action with zero unused people may call providers.
+3. Resume Firecrawl at `firecrawlNextQueryIndex`, Tavily at `tavilyNextQueryIndex`, Bright at `brightNextPage`, and Apify at `apifyNextPage`.
+4. Add More executes one bounded provider action. Its per-action cap leaves durable continuation for the next explicit click and reports `exhausted=false` while work remains.
+5. Double-clicks/replays reuse the same durable expansion and daily quota reservation.
 
-1. Reuse unused Redis/Postgres candidates first.
-2. If any unused durable people remain, return up to the batch limit and stop—even if only one or four remain.
-3. Only a later Add More action with zero unused durable people may continue Bright from `brightNextPage`; Apify continues from `apifyNextPage` only after Bright exhaustion or for the current action's Bright failure.
-4. Dedupe the page against every permanent public person for the company and against the search's prior grants.
-5. Persist genuinely new public people and provenance before allocating them.
-6. If the provider yields only duplicates or no usable people, return **“No more people were found.”** without another provider loop.
+#### Firecrawl rollout and verification
 
-#### Optional live-provider smoke check
+Apply `20260929010000_discover_firecrawl_provider_chain` before deploying the code. Existing batches receive `providerChainVersion=1` and keep their pre-Firecrawl provider sequence; new batches default to version 2. Existing Firecrawl cursors default to zero/false and downstream cursors remain untouched. This prevents old completed searches from restarting discovery at a newly introduced provider.
 
-After applying the migration in a non-production environment, set
-`DISCOVER_BRIGHTDATA_ENABLED=true`, `BRIGHTDATA_API_KEY`, and
-`BRIGHTDATA_SERP_ZONE`, then run one narrowly scoped Discover search with a
-company, one role, and one location. Confirm the safe logs show Bright starting
-first; every positive valid Bright count must produce no Apify fallback. Confirm
-that a true empty Bright page allows company-targeted Apify, while a transient
-Bright failure allows Apify only for that action and leaves the Bright page
-unchanged. Repeat **Add 10 more** only after the stored candidates are consumed
-and confirm that each provider resumes its own saved page. Inspect only
-aggregate events and the sanitized durable rows—never print credentials or raw
-provider payloads.
+Set the server-only `FIRECRAWL_API_KEY` in the deployment environment. In a non-production environment, verify a narrowly scoped search persists its full validated candidate pool with `FIRECRAWL` membership provenance, allocates ten, and makes no downstream calls when the target is met. Consume the stored remainder using Add More, flush Redis, and verify the next explicit provider action resumes the stored query index. Inspect aggregate events only.
+
+See [the Firecrawl implementation reference](DISCOVER_FIRECRAWL.md) for API sources, limits, continuation, failure behavior, rollout, and verification commands.
 
 #### Durable ingestion, invalidation, and concurrency
 
-`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Bright Data or Apify result follows:
+`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Firecrawl, Tavily, Bright Data, or Apify result follows:
 
 ```text
 normalize → sanitize → attach canonical company → stable identity dedupe
@@ -688,6 +683,13 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 | `HUNTER_KEY_ENCRYPTION_SECRET` | Production | Encrypts stored Hunter API keys. Must differ from `SESSION_SECRET` |
 | `APIFY_API_TOKEN` | For Discover | Apify LinkedIn profile-search actor token |
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Default `harvestapi/linkedin-profile-search` |
+| `DISCOVER_FIRECRAWL_ENABLED` | Optional | Enables the first external provider; default `true`, usable only with an API key |
+| `FIRECRAWL_API_KEY` | With Firecrawl enabled | Server-only Bearer credential; never persisted or logged |
+| `DISCOVER_FIRECRAWL_TIMEOUT_MS` | Optional | Default `30000`; bounded by the remaining parent budget and a cleanup reserve |
+| `DISCOVER_FIRECRAWL_MAX_RESULTS_PER_QUERY` | Optional | Default `50` raw results; supported range 1–100 |
+| `DISCOVER_FIRECRAWL_MAX_QUERIES` | Optional | Default `5` bounded title queries; supported range 1–20 |
+| `DISCOVER_FIRECRAWL_MAX_QUERIES_PER_ACTION` | Optional | Default `2` queries per provider action; supported range 1–10 |
+| `DISCOVER_FIRECRAWL_SCRAPE_RESULTS` | Optional | Must be `false`; enabling scraping is rejected |
 | `DISCOVER_BRIGHTDATA_ENABLED` | Optional | Enables Bright Data public-people discovery before Apify. Default `false` |
 | `BRIGHTDATA_API_KEY` / `BRIGHTDATA_SERP_ZONE` | With Bright enabled | Server-only Bright Data credentials and SERP zone |
 | `DISCOVER_BRIGHTDATA_TIMEOUT_MS` | Optional | Per-attempt timeout for each Bright Data SERP request. Default `90000`, maximum `120000`; each page makes at most two attempts |

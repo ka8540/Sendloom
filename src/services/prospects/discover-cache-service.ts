@@ -201,6 +201,10 @@ export type DiscoverCacheExpansionState = {
   providerNextPage: number;
   providerPagesFetched: number;
   providerExhausted: boolean;
+  providerChainVersion?: number;
+  firecrawlNextQueryIndex?: number;
+  firecrawlQueriesFetched?: number;
+  firecrawlExhausted?: boolean;
   tavilyNextQueryIndex?: number;
   tavilyQueriesFetched?: number;
   tavilyExhausted?: boolean;
@@ -244,7 +248,7 @@ export interface DiscoverCacheExpansionPort {
   /** Atomically append net-new cached people and advance continuation state. */
   appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState>;
   /** Persist provider exhaustion so future expansions stop calling the provider. */
-  markProviderExhausted(fingerprint: string, provider?: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY"): Promise<void>;
+  markProviderExhausted(fingerprint: string, provider?: "FIRECRAWL" | "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY"): Promise<void>;
   /**
    * Run `fn` while holding the per-fingerprint stampede lock so at most one
    * provider continuation runs for an identical canonical query at a time. The

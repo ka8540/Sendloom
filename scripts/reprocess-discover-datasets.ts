@@ -4,9 +4,9 @@
  * rejection where "jpmorgan-chase" !== "jpmorganchase" dropped every profile),
  * leaving a READY search with zero allocated people.
  *
- *   npx tsx scripts/reprocess-discover-datasets.ts --scan
- *   npx tsx scripts/reprocess-discover-datasets.ts --scan --apply
- *   npx tsx scripts/reprocess-discover-datasets.ts --searches <id1,id2,...> --apply
+ *   npx tsx --conditions=react-server scripts/reprocess-discover-datasets.ts --scan
+ *   npx tsx --conditions=react-server scripts/reprocess-discover-datasets.ts --scan --apply
+ *   npx tsx --conditions=react-server scripts/reprocess-discover-datasets.ts --searches <id1,id2,...> --apply
  *
  * Dry-run by default; pass --apply to write. `--scan` finds a BOUNDED batch
  * (newest first, max 50) of repair-eligible searches:
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
   const { searchIds, scan, apply } = parseArgs(process.argv.slice(2));
   if (searchIds.length === 0 && !scan) {
     console.error(
-      "Usage: npx tsx scripts/reprocess-discover-datasets.ts (--scan | --searches <id1,id2,...>) [--apply]"
+      "Usage: npx tsx --conditions=react-server scripts/reprocess-discover-datasets.ts (--scan | --searches <id1,id2,...>) [--apply]"
     );
     process.exitCode = 1;
     return;
