@@ -5,7 +5,7 @@ import { NotFoundDog } from "@/components/not-found-dog";
 
 export default function NotFoundPage() {
   return (
-    <main className="not-found-shell">
+    <main id="main-content" className="not-found-shell">
       <section className="card not-found-card">
         <div className="not-found-hero">
           <span className="not-found-kicker">Lost pup patrol</span>

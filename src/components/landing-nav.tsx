@@ -154,6 +154,10 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
 
   const closeMenu = useCallback(() => setOpen(false), []);
 
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   /* Escape closes and returns focus to the control that opened the panel;
      a pointer press outside it closes without stealing focus. */
   useEffect(() => {
@@ -161,11 +165,28 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
       return;
     }
 
+    panelRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.stopPropagation();
         setOpen(false);
         toggleRef.current?.focus();
+      } else if (event.key === "Tab") {
+        const focusable = [
+          toggleRef.current,
+          ...Array.from(panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") ?? [])
+        ].filter((element): element is HTMLElement => Boolean(element && element.getClientRects().length));
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
       }
     };
 

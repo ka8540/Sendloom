@@ -814,7 +814,7 @@
   gap: 0.3rem;
 }
 
-.panelHeader h2 {
+.panelHeader h1 {
   margin: 0;
   font-size: clamp(1.3rem, 1.1rem + 0.7vh, 1.6rem);
   letter-spacing: -0.04em;
@@ -951,6 +951,17 @@
   padding-right: 3.35rem;
 }
 
+.formWrap :global(.password-toggle-button) {
+  right: 0.3rem;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.formWrap :global(.password-toggle-button:focus-visible) {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
 /* Premium gradient CTA with a shimmer sweep on hover. */
 .formWrap :global(.form .button) {
   position: relative;
@@ -986,6 +997,9 @@
 }
 
 .formWrap :global(.auth-recovery-link) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   color: var(--accent);
   font-size: 0.82rem;
   font-weight: var(--weight-semibold);
@@ -1019,6 +1033,12 @@
 .legal a {
   color: var(--accent);
   font-weight: var(--weight-semibold);
+}
+
+.switch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
 }
 
 .switch a:hover,
@@ -1344,6 +1364,75 @@
 .pageMinimal .orbits,
 .pageMinimal .showcaseGlow {
   opacity: 0.5;
+}
+
+/* The compact layout must follow the minimal variant's desktop rules above.
+   Otherwise its two-column grid and right margin win at phone widths. */
+@media (max-width: 1100px) {
+  .page {
+    display: block;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+    overflow-x: clip;
+  }
+
+  .frame,
+  .pageMinimal .frame {
+    width: min(100% - 2rem, 34rem);
+    height: auto;
+    max-height: none;
+    min-height: 100dvh;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    align-content: center;
+    padding: 5.75rem 0 2rem;
+  }
+
+  .showcase {
+    display: none;
+  }
+
+  .panel,
+  .pageMinimal .panel {
+    order: initial;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    justify-self: stretch;
+    transform: none;
+  }
+
+  .pageMinimal .backHome {
+    top: 1rem;
+    left: max(1rem, calc((100vw - 34rem) / 2));
+  }
+}
+
+@media (max-width: 380px) {
+  .frame,
+  .pageMinimal .frame {
+    width: calc(100% - 1.25rem);
+    padding-top: 5rem;
+  }
+
+  .panelInner,
+  .pageMinimal .panelInner {
+    padding: 1rem;
+  }
+
+  .pageMinimal .backHome {
+    left: 0.625rem;
+  }
+}
+
+.backHome:focus-visible,
+.providerButton:focus-visible,
+.switch a:focus-visible,
+.legal a:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 3px;
 }
 
 /* ---------- Reduced motion ---------- */
