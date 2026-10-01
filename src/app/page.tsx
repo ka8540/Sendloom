@@ -12,7 +12,6 @@ import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
-import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
 import styles from "@/app/landing.module.css";
 
@@ -164,12 +163,7 @@ const safetyPoints = [
   }
 ] as const;
 
-export default async function LandingPage() {
-  // Send already-authenticated visitors straight to their workspace instead of
-  // showing the public landing page; logged-out visitors still get the landing
-  // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
-  await redirectAuthenticatedToWorkspace();
-
+export default function LandingPage() {
   /* The three product visuals for the Data chapter, in story order. Rendered
      as static markup; LandingMotion deals them as a deck on desktop. All
      names and companies are fictional. */

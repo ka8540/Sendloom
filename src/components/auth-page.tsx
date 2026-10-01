@@ -103,7 +103,7 @@ export function AuthPage({
             </div>
 
             <span className={styles.eyebrow}>{eyebrow}</span>
-            <h1 className={styles.title}>{renderBrandText(title)}</h1>
+            <p className={styles.title}>{renderBrandText(title)}</p>
             <p className={styles.description}>{renderBrandText(description)}</p>
           </header>
 
@@ -167,7 +167,7 @@ export function AuthPage({
             </div>
 
             <div className={styles.panelHeader}>
-              <h2>{renderBrandText(panelTitle)}</h2>
+              <h1>{renderBrandText(panelTitle)}</h1>
               <p>{renderBrandText(panelDescription)}</p>
             </div>
 

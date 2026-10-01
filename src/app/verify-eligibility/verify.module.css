@@ -185,6 +185,7 @@
 }
 
 .ineligibleButton {
+  min-height: 44px;
   background: none;
   border: none;
   color: hsl(220 20% 55%);
@@ -220,6 +221,9 @@
 }
 
 .backLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--accent);
   font-size: 0.9rem;
   text-decoration: underline;
@@ -228,6 +232,21 @@
 
 .backLink:hover {
   opacity: 0.85;
+}
+
+@media (max-width: 560px) {
+  .container {
+    padding: 1rem 0.75rem;
+  }
+
+  .card {
+    padding: 1.75rem 1.1rem;
+  }
+
+  .checkboxLabel {
+    padding: 0.75rem;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* Light theme */

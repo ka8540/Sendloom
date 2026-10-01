@@ -222,7 +222,7 @@ export async function getSessionEmail() {
   return session?.email ?? null;
 }
 
-// Used by the public landing/login/signup pages: if the visitor already has a
+// Used by the login/signup/recovery pages: if the visitor already has a
 // valid, non-expired session, send them straight to their workspace instead of
 // re-showing the marketing/auth flow. Session validity is decided by
 // `getSession()` (JWT signature + DB freshness/expiry), so a stale, revoked, or

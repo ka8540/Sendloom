@@ -130,7 +130,7 @@ export default function VerifyEligibilityPage() {
 
   if (blocked) {
     return (
-      <div className={styles.container}>
+      <main id="main-content" className={styles.container}>
         <div className={styles.card}>
           <div className={styles.blockedIcon} aria-hidden="true">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -146,12 +146,12 @@ export default function VerifyEligibilityPage() {
             <Link href="/" className={styles.backLink}>Return to homepage</Link>
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className={styles.container}>
+    <main id="main-content" className={styles.container}>
       <div className={styles.card}>
         <div className={styles.headerIcon} aria-hidden="true">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -224,6 +224,6 @@ export default function VerifyEligibilityPage() {
           </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
