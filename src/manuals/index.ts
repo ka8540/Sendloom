@@ -4,14 +4,12 @@ import { analysisManual } from "@/manuals/analysisManual";
 import { campaignDetailManual } from "@/manuals/campaignDetailManual";
 import { campaignCreateManual, campaignsManual } from "@/manuals/campaignsManual";
 import { discoverDetailManual, discoverListManual } from "@/manuals/discoverManual";
-import { finderManual } from "@/manuals/finderManual";
 import { importsManual } from "@/manuals/importsManual";
 import { templatesManual } from "@/manuals/templatesManual";
 import { workspaceManual } from "@/manuals/workspaceManual";
 
 const routeManuals: Record<string, ManualConfig> = {
   "/workspace": workspaceManual,
-  "/finder": finderManual,
   "/imports": importsManual,
   "/templates": templatesManual,
   "/campaigns": campaignsManual,

@@ -4,7 +4,7 @@ import styles from "@/app/landing.module.css";
 
 const flowNodes = [
   { icon: Upload, label: "Leads imported", meta: "CSV & XLSX mapped" },
-  { icon: Search, label: "Contacts enriched", meta: "hunter.io lookups" },
+  { icon: Search, label: "People discovered", meta: "company · role · location" },
   { icon: FileText, label: "Template ready", meta: "HTML · merge vars" },
   { icon: Workflow, label: "Sequence built", meta: "sender + window set" },
   { icon: Mail, label: "Sent via Gmail", meta: "connected sender" },

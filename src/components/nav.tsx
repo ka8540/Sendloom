@@ -19,7 +19,6 @@ import {
   PanelLeftOpen,
   PackageOpen,
   ScrollText,
-  Search,
   SendHorizontal,
   ShieldAlert,
   ShieldUser,
@@ -155,7 +154,6 @@ export function AppNav({
       ]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },
-        { href: "/finder" as Route, label: "Finder", icon: Search },
         { href: "/prospects" as Route, label: "Discover", icon: UserRoundSearch },
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },

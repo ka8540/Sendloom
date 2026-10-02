@@ -20,9 +20,11 @@ function operatorNavBlock(): string {
 describe("primary product navigation", () => {
   it("still renders every main dashboard item", () => {
     const block = operatorNavBlock();
-    for (const label of ["Overview", "Finder", "Discover", "Imports", "Templates", "Sequences"]) {
+    for (const label of ["Overview", "Discover", "Imports", "Templates", "Sequences", "Analysis"]) {
       expect(block).toContain(`label: "${label}"`);
     }
+    expect(block).not.toContain('label: "Finder"');
+    expect(block).not.toContain('href: "/finder"');
   });
 
   it("no longer groups Account with the primary dashboard nav", () => {

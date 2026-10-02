@@ -92,7 +92,7 @@ function present(targets: Set<string>) {
 describe("Overview manual registration + Help button (#1, #31)", () => {
   it("registers the guide for /workspace and leaves other routes alone", () => {
     expect(getManualForPathname("/workspace")).toBe(workspaceManual);
-    expect(getManualForPathname("/finder")?.id).toBe("finder");
+    expect(getManualForPathname("/finder")).toBeNull();
     expect(getManualForPathname("/imports")?.id).toBe("imports");
     expect(getManualForPathname("/templates")?.id).toBe("templates");
     expect(getManualForPathname("/campaigns")?.id).toBe("campaigns");
@@ -115,7 +115,7 @@ describe("Overview manual registration + Help button (#1, #31)", () => {
     expect(workspaceManual.finishLabel).toBe("Done");
     // The shared overlay only overrides the default when a manual opts in.
     expect(OVERLAY_SOURCE).toContain('{manual.finishLabel ?? "Finish"}');
-    for (const path of ["/finder", "/imports", "/templates", "/campaigns", "/prospects"]) {
+    for (const path of ["/imports", "/templates", "/campaigns", "/prospects"]) {
       expect(getManualForPathname(path)?.finishLabel).toBeUndefined();
     }
   });
@@ -399,7 +399,7 @@ describe("No backend work + no other guide changed (#31, #32)", () => {
   });
 
   it("does not introduce Overview targets into unrelated manuals", () => {
-    for (const path of ["/finder", "/imports", "/templates", "/campaigns", "/prospects"]) {
+    for (const path of ["/imports", "/templates", "/campaigns", "/prospects"]) {
       const manual = getManualForPathname(path);
       expect(manual?.id).not.toBe("workspace");
       expect(manual?.helpVariant).not.toBe("simple");

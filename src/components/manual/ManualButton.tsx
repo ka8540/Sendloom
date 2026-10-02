@@ -21,7 +21,6 @@ const GUIDE_CONTEXT_BY_ID: Record<string, string> = {
   workspace: "overview_guide_menu",
   "discover-list": "discover_guide_menu",
   "discover-detail": "discover_guide_menu",
-  finder: "finder_guide_menu",
   imports: "imports_guide_menu",
   templates: "templates_guide_menu",
   campaigns: "sequences_guide_menu",

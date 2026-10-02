@@ -690,7 +690,7 @@ describe("Discover navigation and landing contracts", () => {
    * the next visual pass.
    */
   it("still presents Discover on the landing page alongside the other data capabilities", () => {
-    for (const title of ["Imports", "Discover", "Email enrichment"]) {
+    for (const title of ["Imports", "Discover", "Build your outreach list"]) {
       expect(landingSource).toContain(`title: "${title}"`);
     }
 

@@ -56,7 +56,7 @@ const chapters: Record<"data" | "sequences" | "control", Chapter> = {
     label: "Data",
     headline: { lead: "Find the people worth writing to.", emphasis: "In minutes." },
     intro:
-      "Bring your own list or build one inside the workspace. Every row keeps its structure through import, enrichment, and the sends that follow."
+      "Bring your own list or use Discover to find relevant people. Review suggested work contacts before adding them to outreach."
   },
   sequences: {
     index: "02",
@@ -102,9 +102,9 @@ const dataStories = [
   },
   {
     index: "03",
-    title: "Email enrichment",
-    body: "Run name-plus-domain and domain-wide lookups with your own Hunter API key without leaving the workspace.",
-    meta: "Bring your own API key"
+    title: "Build your outreach list",
+    body: "Review the people and inferred work contacts you find, then add selected results to a list for your next sequence.",
+    meta: "Review, select, add"
   }
 ] as const;
 
@@ -270,17 +270,17 @@ export default function LandingPage() {
       </div>
     </article>,
 
-    <article key="enrichment" className={styles.dataCard} data-story-card aria-label="Email enrichment: resolving a missing address">
+    <article key="outreach-list" className={styles.dataCard} data-story-card aria-label="Discover: reviewing people for an outreach list">
       <div className={styles.winBar}>
         <SendloomLogo className={styles.winMark} />
-        <span className={styles.winTitle}>Email enrichment</span>
-        <span className={styles.winMeta}>Hunter connected</span>
+        <span className={styles.winTitle}>Add to outreach</span>
+        <span className={styles.winMeta}>From Discover</span>
       </div>
       <div className={styles.winBody}>
         <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
           <div>
-            <p className={styles.winScreenTitle}>Work emails</p>
-            <p className={styles.winSub}>Fill missing work emails.</p>
+            <p className={styles.winScreenTitle}>Review contacts</p>
+            <p className={styles.winSub}>Choose who belongs on your list.</p>
           </div>
           <span className={styles.winCount}>3 contacts</span>
         </div>
@@ -288,7 +288,7 @@ export default function LandingPage() {
           <span className={styles.enrichTrack} aria-hidden="true">
             <span className={styles.enrichFill} />
           </span>
-          <span>2 of 3 resolved</span>
+          <span>2 of 3 selected</span>
         </div>
         <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.2)}>
           <span className={styles.avatar} aria-hidden="true">MC</span>
@@ -297,7 +297,7 @@ export default function LandingPage() {
             <span className={styles.cellMuted}>Stripe</span>
           </span>
           <span className={styles.mailField}>maya@stripe.com</span>
-          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
+          <span className={`${styles.statusChip} ${styles.statusFound}`}>Selected</span>
         </div>
         <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.27)}>
           <span className={styles.avatar} aria-hidden="true">EM</span>
@@ -308,13 +308,13 @@ export default function LandingPage() {
           <span className={styles.swapCell}>
             <span className={`${styles.mailField} ${styles.mailFieldEmpty} ${styles.swapPending}`}>
               <i className={styles.searchDot} aria-hidden="true" />
-              Searching
+              Reviewing
             </span>
             <span className={`${styles.mailField} ${styles.swapFound}`}>ethan@linear.com</span>
           </span>
           <span className={`${styles.swapCell} ${styles.swapStatus}`}>
-            <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Searching</span>
-            <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Found</span>
+            <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Review</span>
+            <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Selected</span>
           </span>
         </div>
         <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.34)}>
@@ -324,12 +324,12 @@ export default function LandingPage() {
             <span className={styles.cellMuted}>Figma</span>
           </span>
           <span className={styles.mailField}>priya@figma.com</span>
-          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
+          <span className={`${styles.statusChip} ${styles.statusSearching}`}>Review</span>
         </div>
       </div>
       <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
-        <span>Hunter name + domain lookups</span>
-        <span className={styles.chipReady}>Ready</span>
+        <span>Review inferred work contacts</span>
+        <span className={styles.chipReady}>Add selected</span>
       </div>
     </article>
   ];
@@ -374,8 +374,8 @@ export default function LandingPage() {
             <span data-hero-word>not</span> <span data-hero-word>sprayed.</span>
           </h1>
           <p className={styles.heroLede} data-reveal>
-            Import a list, fill the missing addresses, and run a paced sequence from your own
-            Gmail. One workspace, start to finish.
+            Import a list or use Discover to find relevant people. Review inferred work contacts,
+            add selected people to outreach, then send a paced sequence through Gmail and track results.
           </p>
           <div className={styles.heroActions} data-reveal>
             <Link className={styles.buttonPrimary} href="/signup">

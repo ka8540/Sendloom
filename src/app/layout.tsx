@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     template: "%s · Sendloom"
   },
   description:
-    "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox. Delivery, replies and follow-ups tracked on a single screen.",
+    "Import a list or use Discover to find people, review inferred work contacts, and run a paced sequence from your own inbox. Track delivery, replies, and follow-ups in one workspace.",
   applicationName: "Sendloom",
   /* No canonical here on purpose: metadata set on the root layout is inherited
      by every route that does not override it, so a canonical of "/" would make
@@ -78,13 +78,13 @@ export const metadata: Metadata = {
     siteName: "Sendloom",
     title: "Sendloom, outreach operations on one surface",
     description:
-      "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
+      "Import a list or use Discover to find people, review work contacts, and run a paced sequence from your own inbox."
   },
   twitter: {
     card: "summary_large_image",
     title: "Sendloom, outreach operations on one surface",
     description:
-      "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
+      "Import a list or use Discover to find people, review work contacts, and run a paced sequence from your own inbox."
   }
 };
 

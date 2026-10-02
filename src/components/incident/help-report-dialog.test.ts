@@ -25,7 +25,6 @@ const DASHBOARD_ROUTES = [
   { path: "/workspace", label: "Overview" },
   { path: "/prospects", label: "Discover" },
   { path: "/prospects/xyz", label: "Discover" },
-  { path: "/finder", label: "Finder" },
   { path: "/imports", label: "Imports" },
   { path: "/templates", label: "Templates" },
   { path: "/campaigns", label: "Sequences" },
