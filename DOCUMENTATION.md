@@ -399,17 +399,13 @@ Production note: this document describes product behavior and repository content
 
 ### Admin
 
-Admin users are routed to the admin surface and see admin navigation in the sidebar.
+`User.isAdmin` remains the only runtime admin authority. The sidebar has six top-level workspaces: Overview, Users, Analytics, Operations, Communications, and Audit & Security. Workspace tabs hold Platform/Sending/Discover/Incidents and Overview/Product Updates/System Notices/Legal Releases. The shared Admin V2 shell supplies headers, metrics, tabs, tables, badges, and empty/error states using the existing light/dark tokens.
 
-Current admin routes:
+Overview (`/admin`) answers platform health, use, and attention with counts from persisted data. Confirmed sends come from `SendLedger`; health reuses `getSystemHealth()`; attention items come from failed runs/broadcasts, high-severity open incidents, and unhealthy checks. The compact attention row collapses when clear; product pulse charts seven zero-filled UTC days. Analytics (`/admin/analytics`) uses 7/30/90-day daily series for growth, outreach, and Discover, plus persisted milestone and adoption bars. Activation milestones are independently measured current/historical signals; their percentages use all product users as denominator and do not claim sequential drop-off. Its total is explicitly **product users**, excluding admins. Admin Users' total includes admins; “active product users” counts non-admin accounts whose latest `lastSeenAt` falls within the stated period. The chart labels that last-seen signal directly instead of implying complete daily active-user history. Users (`/admin/users`) uses server search, status filters, and 20-row URL-backed pagination, clamping out-of-range requests. Each detail (`/admin/users/[id]`) has Overview, Usage, Access, and Activity tabs, including a 30-day usage series. The Access tab uses the existing guarded API and service for capability changes, session revocation, restriction, and deletion.
 
-- `/admin`
-- `/admin/users`
-- `/admin/restrictions`
-- `/admin/system-health`
-- `/admin/activity`
+Operations (`/admin/operations`) contains Platform health, Sending run/job/sender state, Discover search/allocation/provider state, and privacy-preserving incident triage. Sending and Discover plot seven-day grouped records and paginate failed rows at 10 per page; incidents use 20-row server pages with URL filters. Communications (`/admin/communications`) contains a recent combined view plus independent Product Update and System Notice composers and delivery ledgers. Each queue and history is server-paginated at 20 rows without changing preview, snapshot, schedule, or delivery processors. Legal Releases (`/admin/communications/legal`) is a read-only 20-row delivery monitor; legal text is not edited in admin. Audit & Security (`/admin/audit`) offers 25-row server pages with search and expandable category, severity, user, action, and UTC date filters. Metadata is not rendered in the global table; user activity includes legacy email-only rows.
 
-Admin capabilities include user listing, account restrictions, per-capability disables, session revocation, account data deletion, system health inspection, user activity search, and audit-log review.
+Legacy URLs redirect: `/admin/restrictions` to restricted Users or a specified user's Access tab; `/admin/system-health` to Platform; `/admin/activity` to Audit or a specified user's Activity tab; `/admin/incidents` to Operations/Incidents; `/admin/system-notices` and `/admin/product-updates` to their Communications tabs. Admin APIs retain their original routes and guards. The app's compact touch device gate remains in the shared layout.
 
 ## 5. User Journey
 
@@ -463,51 +459,20 @@ Normal user flow:
 
 ```mermaid
 flowchart TD
-    A["Admin sign in"] --> B["/admin overview"]
-    B --> C["Review metrics and system health strip"]
-    B --> D["/admin/users"]
-    D --> E["Search or select user"]
-    E --> F["Inspect counts, session, compliance, restrictions"]
-    F --> G{"Action needed?"}
-    G -->|Restrict| H["Set restrictedAt/restrictedReason"]
-    G -->|Capability control| I["Disable API/import/template/launch/AI"]
-    G -->|Revoke| J["Advance sessionIssuedAt and clear expiry"]
-    G -->|Delete| K["Delete user data and stored objects"]
-    B --> L["/admin/restrictions"]
-    B --> M["/admin/system-health"]
-    B --> N["/admin/activity"]
-    H --> O["AuditLog"]
-    I --> O
-    J --> O
-    K --> O
+    A["Admin sign in"] --> B["Overview: health, use, attention"]
+    B --> C["Users: find account"]
+    C --> D["User detail: Overview / Usage / Access / Activity"]
+    D --> E["Access mutation via guarded admin API"]
+    E --> F["AuditLog"]
+    B --> G["Analytics: adoption and outreach"]
+    B --> H["Operations: Platform / Sending / Discover / Incidents"]
+    B --> I["Communications: Updates / Notices / Legal"]
+    B --> J["Audit & Security"]
 ```
 
-Admin overview shows aggregate metrics, user status, sender-domain breakdowns, and a system health strip.
+The admin first checks Overview for service state and actionable items. Users combines the former Restrictions workflow with account inspection. Access mutations keep existing self/admin protection, rate limits, and audit logging. Operations reuses the existing health and incident implementations; incident DTOs continue to omit reporter identity. Communications changes navigation only: Product Update and System Notice delivery semantics, exact previews, and processor gates remain separate. Legal Releases is read-only.
 
-User management lets an admin inspect account state, session state, counts, compliance fields, and restriction flags. Admins can:
-
-- Disable all API access.
-- Disable import writes.
-- Disable template writes.
-- Disable campaign launches.
-- Disable AI enhancements.
-- Revoke user sessions.
-- Restrict or unrestrict accounts with a reason.
-- Delete all account data for a non-admin user.
-
-Admin-only enforcement:
-
-- Admin page access uses `requireAdminUser()`.
-- Admin API access uses `requireAdminApiUser()`.
-- Admin authority comes from `User.isAdmin`, not an environment-email match at request time.
-- Admin accounts and the acting admin's own account are protected from restriction/deletion flows.
-- Non-admin admin API attempts are audit logged as security events.
-
-Activity logs:
-
-- `/admin/activity` uses user search, summaries, and paginated audit events.
-- `AuditLog` metadata is sanitized on write and again on read.
-- Legacy audit rows may lack newer fields; activity lookup matches by `actorUserId` or legacy `actorEmail`.
+Admin page access uses `requireAdminUser()`; API access uses `requireAdminApiUser()`. Non-admin attempts remain denied and audited. AuditLog metadata stays sanitized; user activity matches both current `actorUserId` and legacy `actorEmail` rows.
 
 ## 7. Architecture Overview
 
@@ -600,14 +565,22 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 
 ### Admin Routes
 
-| Route | Purpose | Auth | Notes |
-| --- | --- | --- | --- |
-| `/admin` | Admin overview | Admin only | Metrics, user-status chart, health strip. |
-| `/admin/users` | User management | Admin only | Searchable/paginated users, inspector, controls, deletion. |
-| `/admin/restrictions` | Restriction management | Admin only | Dedicated restriction picker and panel. |
-| `/admin/system-health` | System health UI | Admin only | Database, Redis, storage, OAuth, mail provider, cron checks. |
-| `/admin/activity` | User activity logs | Admin only | Search users and inspect audit events. |
-| `/admin/incidents` | Incident report triage | Admin only | Review privacy-preserving error and manual issue reports. |
+| Route | Purpose |
+| --- | --- |
+| `/admin` | Command center: health, attention, product pulse, running work, recent admin actions. |
+| `/admin/users`, `/admin/users/[id]` | Paginated account list and Overview/Usage/Access/Activity detail. |
+| `/admin/analytics` | 7/30/90-day product adoption and outreach aggregates. |
+| `/admin/operations` | Platform checks from `getSystemHealth()`. |
+| `/admin/operations/sending` | Global sending run, recipient-job, and sender signals. |
+| `/admin/operations/discover` | Search, allocation, expansion, and provider signals. |
+| `/admin/operations/incidents` | Existing privacy-preserving incident triage. |
+| `/admin/communications` | Cross-system communication summary. |
+| `/admin/communications/product-updates`, `/[id]` | Existing Product Update composer/history plus detail. |
+| `/admin/communications/system-notices`, `/[id]` | Existing System Notice composer/history plus detail. |
+| `/admin/communications/legal` | Read-only legal release delivery monitoring. |
+| `/admin/audit` | Global filtered audit/security event table. |
+
+All pages require admin authority. Old standalone routes redirect to their new workspace as described in §4.
 
 ### API Routes
 
@@ -1284,10 +1257,12 @@ Admin nav:
 
 - Overview
 - Users
-- Restrictions
-- System Health
-- Activity Logs
-- Incident Reports
+- Analytics
+- Operations
+- Communications
+- Audit & Security
+
+The sidebar retains its theme and logout utilities. Operations and Communications child sections live in workspace tabs.
 
 ### Startup Overlay
 
@@ -1449,21 +1424,21 @@ Secrets rotation:
 
 | Issue | Symptom | Likely Cause | Where To Inspect | Safe Remediation |
 | --- | --- | --- | --- | --- |
-| Sequence stuck queued | Run stays `QUEUED`; no recipient progress. | Cron not running, Redis lock stuck briefly, scheduled time not due, sender disconnected, import not processed. | `/admin/system-health`, `/api/cron/campaigns` response, `CampaignRun.scheduledFor`, `SenderProfile.oauthRefreshToken`. | Trigger cron manually with secret, verify Redis, reconnect sender, confirm schedule is due. |
+| Sequence stuck queued | Run stays `QUEUED`; no recipient progress. | Cron not running, Redis lock stuck briefly, scheduled time not due, sender disconnected, import not processed. | `/admin/operations`, `/api/cron/campaigns` response, `CampaignRun.scheduledFor`, `SenderProfile.oauthRefreshToken`. | Trigger cron manually with secret, verify Redis, reconnect sender, confirm schedule is due. |
 | Gmail daily cap reached | Sequence shows paused by Gmail safety limit. | Rolling 24-hour `SendLedger` count reached `GMAIL_DAILY_SEND_SAFETY_LIMIT`. | `/api/send-window`, `CampaignRun.progressSnapshot.pauseReason`, `SendLedger`. | Wait for `pauseResumesAt`; do not manually mark recipients failed. Lower send volume or use another sender. |
 | Per-minute pacing waits | Recipient activity says queued/waiting for send window. | `GMAIL_SENDS_PER_MINUTE` window is full for that sender. | `RecipientJob.nextRetryAt`, metadata `blockedBy`, Redis key `gmail-send-rate:sender:<id>`. | Wait. Pacing is not failure. Increase env only after testing mailbox tolerance. |
 | Gmail rate limit despite pacing | Run pauses or recipients retry with Gmail rate-limit metadata. | Gmail returned throttle/quota/temporary error anyway. | `RecipientJob.metadata.lastInternalError`, logs `[campaign-send] Gmail send failed`. | Let backoff/auto-resume run. Consider lower `GMAIL_SENDS_PER_MINUTE`. |
 | Sender disconnected | Launch fails or queued jobs fail with reconnect message. | Google refresh token revoked/expired or missing scopes. | `SenderProfile.oauthRefreshToken`, `lastError`, user-facing Gmail reconnect errors. | User reconnects Gmail through `/api/auth/google/connect`. |
-| Redis down | OTP start/verify/resend fails; rate limits fail in production; scheduler locks/reservations fail. | Redis outage or bad `REDIS_URL`. | `/admin/system-health`, generic auth error plus server log prefix `[auth-otp]`, Redis provider status. | Restore Redis. Pending verification cannot safely fall back to process memory or PostgreSQL. |
+| Redis down | OTP start/verify/resend fails; rate limits fail in production; scheduler locks/reservations fail. | Redis outage or bad `REDIS_URL`. | `/admin/operations`, generic auth error plus server log prefix `[auth-otp]`, Redis provider status. | Restore Redis. Pending verification cannot safely fall back to process memory or PostgreSQL. |
 | Discover Redis result miss/outage | Discover result-cache events show misses or Redis errors, but durable people still return. First-time concurrent requests may lose coalescing while Redis is unavailable. | Result key expired/flushed, malformed cached JSON, network timeout, or Redis outage. | `DISCOVER_REDIS_MISS`, `DISCOVER_DATABASE_HIT`/`ZERO`, Postgres durable batch/person counts, Redis provider status. | Restore Redis for acceleration. Do not rebuild public people or call Apify merely to warm Redis; Postgres fallback is the correctness path and repopulates result payloads when Redis recovers. |
 | Discover unexpectedly calls Apify | A normal search records provider discovery despite expected reusable data. | Permanent Postgres lookup returned zero because canonical identity or strict non-exact role/location evidence did not match; migration may not have run. Redis alone is never sufficient evidence. | `DISCOVER_DATABASE_ZERO`, canonical company key/domain/LinkedIn slug, normalized intent, durable batch membership, migration status. | Verify `20260920173000_discover_durable_public_knowledge` ran, compare strong identity and normalized intent, and inspect aggregate diagnostics. Never weaken tenant isolation or merge conflicting domains. |
 | Verification code never arrives | Signup/password form stays at OTP entry, while resend may also fail. | Missing/invalid `RESEND_API_KEY`, unverified `DEFAULT_FROM_EMAIL`, provider rejection, or recipient filtering. | Resend delivery dashboard and safe `[auth-email]` server logs; never log the code or full provider response. | Correct Resend credentials/sender verification, then restart the flow. A delivery failure deletes the challenge. |
 | Verification code rejected or expired | Verify returns incorrect, exhausted, or expired copy. | Wrong code, old code after resend, 10-minute TTL elapsed, five failed attempts, wrong purpose/user, or already-consumed challenge. | Route status (`400`, `410`, or `429`), Redis challenge existence/TTL, audit action without OTP contents. | Use the newest code; resend after cooldown when allowed, otherwise restart. Never recover or reveal the stored digest. |
-| R2 upload failure | Import or attachment upload fails. | Missing R2 env, bad bucket/token, storage outage. | `/admin/system-health`, storage env vars, R2 dashboard, route response. | Fix R2 credentials/buckets; retry upload. Local mode can be used only where filesystem persistence is acceptable. |
-| Cron not running | Scheduled sequences do not start; replies not syncing. | External cron/Vercel cron not configured or wrong secret. | `/admin/system-health` cron check, host cron logs, `/api/cron/campaigns` status. | Configure cron with correct `CRON_SECRET`; test GET/POST manually. |
+| R2 upload failure | Import or attachment upload fails. | Missing R2 env, bad bucket/token, storage outage. | `/admin/operations`, storage env vars, R2 dashboard, route response. | Fix R2 credentials/buckets; retry upload. Local mode can be used only where filesystem persistence is acceptable. |
+| Cron not running | Scheduled sequences do not start; replies not syncing. | External cron/Vercel cron not configured or wrong secret. | `/admin/operations` cron check, host cron logs, `/api/cron/campaigns` status. | Configure cron with correct `CRON_SECRET`; test GET/POST manually. |
 | OpenAI unavailable | AI enhance/fix-spam returns error. | Missing/invalid `OPENAI_API_KEY` or API outage. | `/api/templates/enhance` response, logs. | Save template manually; retry later; verify key. |
 | Retained Hunter API unavailable | A direct call to a legacy lookup API returns an error; the Discover UI is unaffected by this old API path. | Missing key, invalid key, Hunter 429/5xx, malformed domain. | `/api/email-finder` or `/api/domain-search` response and server logs. | For approved legacy maintenance, verify the stored key, rate limit, and normalized domain. Do not direct normal users to the dormant Finder UI. |
-| Admin restriction issue | User cannot call APIs or launch sequences. | Admin toggled restriction/capability or `restrictedAt` set. | `/admin/users`, `/admin/restrictions`, `User` flags, `AuditLog`. | Admin unrestricts or re-enables specific capability. |
+| Admin restriction issue | User cannot call APIs or launch sequences. | Admin toggled restriction/capability or `restrictedAt` set. | `/admin/users`, `/admin/users?status=restricted`, `User` flags, `AuditLog`. | Admin unrestricts or re-enables specific capability. |
 | Eligibility gate issue | User loops to `/verify-eligibility` or API returns forbidden. | Missing acceptance timestamps, self-reported ineligible, or restricted. | `User` compliance fields, `/api/auth/eligibility-status`, audit logs. | If eligible, complete gate; if incorrectly restricted, admin reviews and unrestricts. Blocked under-18 self-report should not be bypassed casually. |
 | Tracking not updating | Opens/clicks do not appear. | Email client blocks images, token expired/invalid, tracking secret rotated, click target rejected. | Tracking route logs, `RecipientJob.status`, `TRACKING_SECRET`, recipient email client behavior. | Do not rely on tracking as definitive; verify secret rotation impact. |
 | Replies not syncing | Reply count remains zero. | Gmail readonly scope missing/revoked, sync interval, Gmail API issue, reply lacks reference headers/thread match. | `SenderProfile.lastReplySyncAt`, `lastReplySyncError`, `InboundReply`, cron response `replySync`. | Reconnect sender with readonly scope, run cron, inspect sync error. |
@@ -2677,7 +2652,7 @@ GraphQL already mints a per-request UUID (`src/graphql/context.ts`); REST error 
 
 ### Admin incident workflow
 
-`/admin/incidents` (admin nav → "Incident Reports", `requireAdminUser`). The list + detail modal show only safe fields and the anonymous code. Statuses: `NEW → INVESTIGATING → RESOLVED → IGNORED` (reopen supported); admins can add internal notes (never returned to the reporter). Severity (`CRITICAL/HIGH/MEDIUM/LOW`) is derived server-side from category + occurrence count — the client cannot set it. Admin actions audit `incident.viewed`, `incident.status_changed`, `incident.note_added` via the existing `recordAuditEvent` (audit metadata excludes the encrypted reporter identity).
+`/admin/operations/incidents` (Operations → Incidents, `requireAdminUser`). The list + detail modal show only safe fields and the anonymous code. Statuses: `NEW → INVESTIGATING → RESOLVED → IGNORED` (reopen supported); admins can add internal notes (never returned to the reporter). Severity (`CRITICAL/HIGH/MEDIUM/LOW`) is derived server-side from category + occurrence count — the client cannot set it. Admin actions audit `incident.viewed`, `incident.status_changed`, `incident.note_added` via the existing `recordAuditEvent` (audit metadata excludes the encrypted reporter identity).
 
 ### Privacy guarantees (summary)
 

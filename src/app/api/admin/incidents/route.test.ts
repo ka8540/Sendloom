@@ -54,4 +54,12 @@ describe("GET /api/admin/incidents (admin authorization)", () => {
     expect(body.items[0].reportId).toBe("INC-1");
     expect(listAdminIncidentsMock).toHaveBeenCalledTimes(1);
   });
+
+  it("passes a numbered page through the guarded list route", async () => {
+    requireAdminApiUserMock.mockResolvedValue({ user: { id: "admin_1", email: "admin@example.com" } });
+    listAdminIncidentsMock.mockResolvedValue({ items: [], nextCursor: null, totalCount: 0, page: 2, pageSize: 20 });
+    const response = await callGet("http://localhost/api/admin/incidents?page=2&status=NEW");
+    expect(response.status).toBe(200);
+    expect(listAdminIncidentsMock).toHaveBeenCalledWith(expect.any(Object), null, undefined, 2);
+  });
 });

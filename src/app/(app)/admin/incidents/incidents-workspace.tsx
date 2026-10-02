@@ -9,6 +9,7 @@ import { LocalDateTime } from "@/components/local-date-time";
 import { APP_ERROR_CATEGORIES } from "@/lib/incident/app-error";
 import { INCIDENT_SEVERITIES } from "@/lib/incident/severity";
 import { INCIDENT_STATUSES } from "@/lib/incident/status";
+import { AdminClientPagination } from "@/components/admin-v2/client-pagination";
 
 import styles from "./incidents.module.css";
 
@@ -45,7 +46,7 @@ type IncidentDetail = IncidentListItem & {
   occurredAt: string | null;
 };
 
-type ListResponse = { items: IncidentListItem[]; nextCursor: string | null; totalCount: number };
+type ListResponse = { items: IncidentListItem[]; nextCursor: string | null; totalCount: number; page: number; pageSize: number };
 type DateRange = "today" | "7d" | "30d" | "all";
 
 const DATE_RANGES: Array<{ value: DateRange; label: string }> = [
@@ -104,33 +105,47 @@ function readCsrfToken(): string | null {
   return entry ? decodeURIComponent(entry.slice("sendloom_csrf=".length)) : null;
 }
 
-export function AdminIncidentsWorkspace() {
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [category, setCategory] = useState("");
-  const [severity, setSeverity] = useState("");
-  const [status, setStatus] = useState("");
-  const [dateRange, setDateRange] = useState<DateRange>("all");
+export function AdminIncidentsWorkspace({ initialPage = 1, initialFilters = {} }: { initialPage?: number; initialFilters?: { q?: string; category?: string; severity?: string; status?: string; range?: string } }) {
+  const [page, setPage] = useState(Math.max(1, Math.floor(initialPage) || 1));
+  const [search, setSearch] = useState(initialFilters.q ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(initialFilters.q ?? "");
+  const [category, setCategory] = useState(initialFilters.category ?? "");
+  const [severity, setSeverity] = useState(initialFilters.severity ?? "");
+  const [status, setStatus] = useState(initialFilters.status ?? "");
+  const [dateRange, setDateRange] = useState<DateRange>(DATE_RANGES.some((item) => item.value === initialFilters.range) ? initialFilters.range as DateRange : "all");
 
   const [items, setItems] = useState<IncidentListItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const [pending, setPending] = useState(true);
-  const [loadMorePending, setLoadMorePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const filterReady = useRef(false);
+  const restoringHistory = useRef(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timer);
   }, [search]);
 
+  useEffect(() => {
+    if (!filterReady.current) { filterReady.current = true; return; }
+    if (restoringHistory.current) { restoringHistory.current = false; return; }
+    const url = new URL(window.location.href);
+    for (const [key, value] of Object.entries({ q: debouncedSearch, category, severity, status, range: dateRange === "all" ? "" : dateRange })) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
+    url.searchParams.delete("page");
+    window.history.replaceState(null, "", url);
+    setPage(1);
+  }, [category, severity, status, debouncedSearch, dateRange]);
+
   const buildUrl = useCallback(
-    (cursor?: string | null) => {
+    () => {
       const params = new URLSearchParams();
-      if (cursor) params.set("cursor", cursor);
+      params.set("page", String(page));
       if (category) params.set("category", category);
       if (severity) params.set("severity", severity);
       if (status) params.set("status", status);
@@ -145,7 +160,7 @@ export function AdminIncidentsWorkspace() {
       const qs = params.toString();
       return `/api/admin/incidents${qs ? `?${qs}` : ""}`;
     },
-    [category, severity, status, debouncedSearch, dateRange]
+    [category, severity, status, debouncedSearch, dateRange, page]
   );
 
   const load = useCallback(async () => {
@@ -157,12 +172,11 @@ export function AdminIncidentsWorkspace() {
     try {
       const data = await fetchJson<ListResponse>(buildUrl(), { signal: controller.signal });
       setItems(data.items);
-      setNextCursor(data.nextCursor);
+      if (data.page !== page) setPage(data.page);
       setTotalCount(data.totalCount);
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError")) {
         setItems([]);
-        setNextCursor(null);
         setError(loadError instanceof Error ? loadError.message : "Could not load incident reports.");
       }
     } finally {
@@ -170,27 +184,35 @@ export function AdminIncidentsWorkspace() {
         setPending(false);
       }
     }
-  }, [buildUrl]);
+  }, [buildUrl, page]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const loadMore = useCallback(async () => {
-    if (!nextCursor) {
-      return;
-    }
-    setLoadMorePending(true);
-    try {
-      const data = await fetchJson<ListResponse>(buildUrl(nextCursor));
-      setItems((current) => [...current, ...data.items]);
-      setNextCursor(data.nextCursor);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load more reports.");
-    } finally {
-      setLoadMorePending(false);
-    }
-  }, [nextCursor, buildUrl]);
+  function changePage(nextPage: number) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", String(nextPage));
+    window.history.pushState(null, "", url);
+    setPage(nextPage);
+  }
+
+  useEffect(() => {
+    const onPopState = () => {
+      const params = new URL(window.location.href).searchParams;
+      restoringHistory.current = true;
+      setPage(Math.max(1, Number(params.get("page")) || 1));
+      setSearch(params.get("q") ?? "");
+      setDebouncedSearch(params.get("q") ?? "");
+      setCategory(params.get("category") ?? "");
+      setSeverity(params.get("severity") ?? "");
+      setStatus(params.get("status") ?? "");
+      const range = params.get("range");
+      setDateRange(DATE_RANGES.some((item) => item.value === range) ? range as DateRange : "all");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const applyUpdated = useCallback((detail: IncidentDetail) => {
     setItems((current) => current.map((item) => (item.reportId === detail.reportId ? { ...item, ...detail } : item)));
@@ -341,15 +363,7 @@ export function AdminIncidentsWorkspace() {
               </table>
             </div>
 
-            {nextCursor ? (
-              <div className={styles.loadMoreRow}>
-                <button type="button" className={styles.loadMoreButton} onClick={() => void loadMore()} disabled={loadMorePending}>
-                  {loadMorePending ? "Loading…" : "Load more reports"}
-                </button>
-              </div>
-            ) : (
-              <p className={styles.endNote}>End of incident reports.</p>
-            )}
+            <AdminClientPagination page={page} pageSize={20} count={totalCount} onPageChange={changePage} />
           </>
         )}
       </div>

@@ -190,6 +190,16 @@ describe("admin DTOs never expose identity or encrypted columns", () => {
     expect(serialized).not.toContain("encryptedReporter");
   });
 
+  it("clamps numbered admin pages and bounds the incident query", async () => {
+    prismaMock.incidentReport.count.mockResolvedValue(45);
+    prismaMock.incidentReport.findMany.mockResolvedValue([ROW]);
+    const result = await listAdminIncidents({}, null, undefined, 999);
+    expect(result.page).toBe(3);
+    expect(result.pageSize).toBe(20);
+    expect(result.totalCount).toBe(45);
+    expect(prismaMock.incidentReport.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 40, take: 20 }));
+  });
+
   it("getAdminIncidentDetail exposes safe diagnostics but no encrypted identity", async () => {
     prismaMock.incidentReport.findUnique.mockResolvedValue(ROW);
 

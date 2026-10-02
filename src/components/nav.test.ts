@@ -39,6 +39,14 @@ describe("primary product navigation", () => {
   });
 });
 
+describe("admin command center navigation", () => {
+  it("contains exactly the six top-level workspaces", () => {
+    const block = NAV_SOURCE.slice(NAV_SOURCE.indexOf("? [", NAV_SOURCE.indexOf("const items: NavItem[]")), NAV_SOURCE.indexOf(": [", NAV_SOURCE.indexOf("const items: NavItem[]")));
+    for (const label of ["Overview", "Users", "Analytics", "Operations", "Communications", "Audit & Security"]) expect(block).toContain(`label: "${label}"`);
+    for (const oldLabel of ["Restrictions", "System Health", "System Notices", "Product Updates", "Activity Logs", "Incident Reports"]) expect(block).not.toContain(`label: "${oldLabel}"`);
+  });
+});
+
 describe("expanded Analysis navigation", () => {
   it("renames only the Analysis overview label to Summary", () => {
     expect(operatorNavBlock()).toContain('{ href: "/workspace" as Route, label: "Overview"');

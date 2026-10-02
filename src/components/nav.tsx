@@ -11,18 +11,13 @@ import {
   ChevronDown,
   CircleUserRound,
   FileSpreadsheet,
-  History,
   House,
   LayoutDashboard,
-  Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
-  PackageOpen,
   ScrollText,
   SendHorizontal,
-  ShieldAlert,
   ShieldUser,
-  Siren,
   UserRoundSearch,
   Users,
 } from "lucide-react";
@@ -145,12 +140,10 @@ export function AppNav({
     ? [
         { href: "/admin" as Route, label: "Overview", icon: LayoutDashboard, exact: true },
         { href: "/admin/users" as Route, label: "Users", icon: Users },
-        { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
-        { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
-        { href: "/admin/system-notices" as Route, label: "System Notices", icon: Megaphone },
-        { href: "/admin/product-updates" as Route, label: "Product Updates", icon: PackageOpen },
-        { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
-        { href: "/admin/incidents" as Route, label: "Incident Reports", icon: Siren },
+        { href: "/admin/analytics" as Route, label: "Analytics", icon: ChartNoAxesCombined },
+        { href: "/admin/operations" as Route, label: "Operations", icon: Activity },
+        { href: "/admin/communications" as Route, label: "Communications", icon: SendHorizontal },
+        { href: "/admin/audit" as Route, label: "Audit & Security", icon: ShieldUser },
       ]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },
@@ -212,7 +205,7 @@ export function AppNav({
             <h1>
               <BrandText>Sendloom</BrandText>
             </h1>
-            <p className="muted">{isAdmin ? "User accounts and controls in one place." : "Lists, templates, and sequences in one place."}</p>
+            <p className="muted">{isAdmin ? "Command center" : "Lists, templates, and sequences in one place."}</p>
           </div>
         </div>
         <button

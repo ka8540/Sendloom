@@ -398,6 +398,10 @@ export async function unrestrictUserAccount(args: {
     throw new AdminActionError("User not found.", 404);
   }
 
+  if (targetUser.id === args.actorUserId || isAdminUser(targetUser)) {
+    throw new AdminActionError("Admin and self accounts cannot be changed from this dashboard.", 403);
+  }
+
   const updatedUser = await prisma.user.update({
     where: { id: targetUser.id },
     data: {
