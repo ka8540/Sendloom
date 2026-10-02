@@ -1,14 +1,17 @@
 import type { Route } from "next";
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, History, UserRound } from "lucide-react";
 import { requireAdminUser } from "@/lib/auth";
 import { getAdminOverview } from "@/services/admin-v2/overview";
-import { AdminTimeChart } from "@/components/admin-v2/admin-charts";
+import { AdminPulseBars } from "@/components/admin-v2/admin-charts";
 import {
+  formatAdminDate,
+  formatAdminEventTitle,
   formatAdminInstant,
   formatAdminRelative,
 } from "@/components/admin-v2/format";
 import {
+  AdminCompactPager,
   AdminMetricStrip,
   AdminPageHeader,
   AdminSection,
@@ -17,9 +20,36 @@ import {
   adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
 
-export default async function AdminOverviewPage() {
+export default async function AdminOverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ activityPage?: string; accountsPage?: string }>;
+}) {
   await requireAdminUser();
-  const data = await getAdminOverview();
+  const params = await searchParams;
+  const data = await getAdminOverview({
+    activityPage: Number(params.activityPage) || 1,
+    accountsPage: Number(params.accountsPage) || 1,
+  });
+  const pageHref = (feed: "activity" | "accounts", page: number) => {
+    const query = new URLSearchParams();
+    const activityPage =
+      feed === "activity" ? page : data.recentAdminPagination.page;
+    const accountsPage =
+      feed === "accounts" ? page : data.recentAccountsPagination.page;
+    if (activityPage > 1) query.set("activityPage", String(activityPage));
+    if (accountsPage > 1) query.set("accountsPage", String(accountsPage));
+    return `/admin${query.size ? `?${query}` : ""}#${feed === "activity" ? "recent-admin-activity" : "recent-accounts"}`;
+  };
+  const pulseTotals = data.pulse.reduce(
+    (sum, day) => ({
+      sends: sum.sends + day.sends,
+      runs: sum.runs + day.runs,
+      searches: sum.searches + day.searches,
+      users: sum.users + day.users,
+    }),
+    { sends: 0, runs: 0, searches: 0, users: 0 },
+  );
   const healthChecks = [
     ["Database", data.health.checks.database],
     ["Redis", data.health.checks.redis],
@@ -144,70 +174,133 @@ export default async function AdminOverviewPage() {
       </div>
       <AdminSection
         title="Product pulse"
-        description="Confirmed sends, sequence launches, and Discover searches by UTC day"
-        action={<Link href="/admin/analytics">Full analytics →</Link>}
+        description="A compact view of the last seven UTC days"
+        action={
+          <Link className={styles.sectionLink} href="/admin/analytics">
+            Full analytics →
+          </Link>
+        }
       >
-        <div className={styles.panel}>
-          <AdminTimeChart
-            data={data.pulse}
-            series={[
-              {
-                key: "sends",
-                name: "Confirmed sends",
-                color: "var(--analysis-green)",
-              },
-              {
-                key: "runs",
-                name: "Sequence runs",
-                color: "var(--analysis-blue)",
-              },
-              {
-                key: "searches",
-                name: "Discover searches",
-                color: "var(--analysis-purple)",
-              },
-            ]}
-          />
+        <div className={`${styles.panel} ${styles.pulseLayout}`}>
+          <div className={styles.pulsePrimary}>
+            <div className={styles.pulseHeading}>
+              <div>
+                <span className={styles.pulseEyebrow}>
+                  OUTREACH / LAST 7 DAYS
+                </span>
+                <div className={styles.pulseTotal}>
+                  {pulseTotals.sends.toLocaleString()}
+                </div>
+                <p>Confirmed sends</p>
+              </div>
+              <span className={styles.pulsePeriod}>7D</span>
+            </div>
+            <AdminPulseBars data={data.pulse} />
+          </div>
+          <div
+            className={styles.pulseAside}
+            aria-label="Other product activity in the last 7 days"
+          >
+            <div className={styles.pulseStat} data-tone="blue">
+              <span>Sequence launches</span>
+              <strong>{pulseTotals.runs.toLocaleString()}</strong>
+              <small>Last 7 days</small>
+            </div>
+            <div className={styles.pulseStat} data-tone="purple">
+              <span>Discover searches</span>
+              <strong>{pulseTotals.searches.toLocaleString()}</strong>
+              <small>Last 7 days</small>
+            </div>
+            <div className={styles.pulseStat} data-tone="green">
+              <span>New product users</span>
+              <strong>{pulseTotals.users.toLocaleString()}</strong>
+              <small>Last 7 days</small>
+            </div>
+          </div>
         </div>
       </AdminSection>
-      <div className={styles.twoColumn}>
+      <div className={`${styles.twoColumn} ${styles.overviewFeeds}`}>
         <AdminSection
+          id="recent-admin-activity"
           title="Recent admin activity"
-          action={<Link href="/admin/audit">Audit & Security →</Link>}
+          action={
+            <Link className={styles.sectionLink} href="/admin/audit">
+              Audit & Security →
+            </Link>
+          }
         >
           {data.recentAdminEvents.length ? (
-            <ul className={`${styles.panel} ${styles.list}`}>
+            <ul className={styles.overviewFeed}>
               {data.recentAdminEvents.map((event) => (
-                <li key={event.id} className={styles.activityRow}>
-                  <strong>{event.message || event.action}</strong>
-                  <small title={formatAdminInstant(event.createdAt)}>
+                <li key={event.id} className={styles.overviewFeedRow}>
+                  <span className={styles.feedIcon} aria-hidden="true">
+                    <History size={16} />
+                  </span>
+                  <span className={styles.feedCopy}>
+                    <strong>
+                      {formatAdminEventTitle(event.message, event.action)}
+                    </strong>
+                    <small>
+                      {event.action.split(".")[0].replaceAll("_", " ")}
+                    </small>
+                  </span>
+                  <time
+                    dateTime={event.createdAt}
+                    title={formatAdminInstant(event.createdAt)}
+                  >
                     {formatAdminRelative(event.createdAt)}
-                  </small>
+                  </time>
                 </li>
               ))}
             </ul>
           ) : (
             <p className={styles.compactEmpty}>No admin events recorded yet.</p>
           )}
+          <AdminCompactPager
+            {...data.recentAdminPagination}
+            href={(page) => pageHref("activity", page)}
+            label="admin activity"
+          />
         </AdminSection>
         <AdminSection
+          id="recent-accounts"
           title="Recently joined accounts"
-          action={<Link href="/admin/users">All users →</Link>}
+          action={
+            <Link className={styles.sectionLink} href="/admin/users">
+              All users →
+            </Link>
+          }
         >
           {data.recentAccounts.length ? (
-            <ul className={`${styles.panel} ${styles.list}`}>
+            <ul className={styles.overviewFeed}>
               {data.recentAccounts.map((user) => (
-                <li key={user.id} className={styles.activityRow}>
-                  <Link href={`/admin/users/${user.id}`}>{user.email}</Link>
-                  <small title={formatAdminInstant(user.createdAt)}>
+                <li key={user.id} className={styles.overviewFeedRow}>
+                  <span className={styles.feedIcon} aria-hidden="true">
+                    <UserRound size={16} />
+                  </span>
+                  <span className={styles.feedCopy}>
+                    <Link href={`/admin/users/${user.id}`} title={user.email}>
+                      {user.email}
+                    </Link>
+                    <small>Joined {formatAdminDate(user.createdAt)}</small>
+                  </span>
+                  <time
+                    dateTime={user.createdAt}
+                    title={formatAdminInstant(user.createdAt)}
+                  >
                     {formatAdminRelative(user.createdAt)}
-                  </small>
+                  </time>
                 </li>
               ))}
             </ul>
           ) : (
             <p className={styles.compactEmpty}>No accounts yet.</p>
           )}
+          <AdminCompactPager
+            {...data.recentAccountsPagination}
+            href={(page) => pageHref("accounts", page)}
+            label="recent accounts"
+          />
         </AdminSection>
       </div>
     </AdminShell>

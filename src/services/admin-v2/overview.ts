@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import { getSystemHealth, type SystemHealthReport } from "@/lib/system-health";
 import { buildUtcSeries, type DailyCount } from "./daily-series";
+import { normalizeAdminPage } from "./pagination";
+
+const OVERVIEW_FEED_PAGE_SIZE = 5;
 
 export type AttentionItem = {
   id: string;
@@ -69,7 +72,13 @@ export function deriveAttention(input: {
   return items.slice(0, 8);
 }
 
-export async function getAdminOverview() {
+export async function getAdminOverview({
+  activityPage: requestedActivityPage = 1,
+  accountsPage: requestedAccountsPage = 1,
+}: {
+  activityPage?: number;
+  accountsPage?: number;
+} = {}) {
   const now = new Date();
   const dayAgo = new Date(now.getTime() - 86_400_000);
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
@@ -87,12 +96,11 @@ export async function getAdminOverview() {
     runStates,
     noticeStates,
     updateStates,
-    recentAdminEvents,
+    adminEventCount,
     newUsers,
     recentSends,
     recentRuns,
     recentSearches,
-    recentAccounts,
   ] = await Promise.all([
     getSystemHealth(),
     prisma.user.count(),
@@ -138,18 +146,7 @@ export async function getAdminOverview() {
       _count: { _all: true },
       where: { status: { in: ["SCHEDULED", "SENDING"] } },
     }),
-    prisma.auditLog.findMany({
-      where: { category: "ADMIN" },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      select: {
-        id: true,
-        action: true,
-        message: true,
-        createdAt: true,
-        severity: true,
-      },
-    }),
+    prisma.auditLog.count({ where: { category: "ADMIN" } }),
     prisma.$queryRaw<
       Array<{ day: Date; count: number }>
     >`SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "User" WHERE "isAdmin" = false AND "createdAt" >= ${weekAgo} GROUP BY 1`,
@@ -162,10 +159,36 @@ export async function getAdminOverview() {
     prisma.$queryRaw<
       DailyCount[]
     >`SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "ProspectSearch" WHERE "createdAt" >= ${weekAgo} GROUP BY 1`,
+  ]);
+  const activityPage = normalizeAdminPage(
+    requestedActivityPage,
+    adminEventCount,
+    OVERVIEW_FEED_PAGE_SIZE,
+  );
+  const accountsPage = normalizeAdminPage(
+    requestedAccountsPage,
+    totalUsers,
+    OVERVIEW_FEED_PAGE_SIZE,
+  );
+  const [recentAdminEvents, recentAccounts] = await Promise.all([
+    prisma.auditLog.findMany({
+      where: { category: "ADMIN" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (activityPage - 1) * OVERVIEW_FEED_PAGE_SIZE,
+      take: OVERVIEW_FEED_PAGE_SIZE,
+      select: {
+        id: true,
+        action: true,
+        message: true,
+        createdAt: true,
+        severity: true,
+      },
+    }),
     prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: { id: true, email: true, createdAt: true, lastSeenAt: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (accountsPage - 1) * OVERVIEW_FEED_PAGE_SIZE,
+      take: OVERVIEW_FEED_PAGE_SIZE,
+      select: { id: true, email: true, createdAt: true },
     }),
   ]);
   const attention = deriveAttention({
@@ -230,11 +253,20 @@ export async function getAdminOverview() {
       ...event,
       createdAt: event.createdAt.toISOString(),
     })),
+    recentAdminPagination: {
+      page: activityPage,
+      pageSize: OVERVIEW_FEED_PAGE_SIZE,
+      count: adminEventCount,
+    },
     recentAccounts: recentAccounts.map((user) => ({
       id: user.id,
       email: user.email,
       createdAt: user.createdAt.toISOString(),
-      lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
     })),
+    recentAccountsPagination: {
+      page: accountsPage,
+      pageSize: OVERVIEW_FEED_PAGE_SIZE,
+      count: totalUsers,
+    },
   };
 }

@@ -142,6 +142,69 @@ export function AdminTimeChart<T extends { day: string }>({
   );
 }
 
+export function AdminPulseBars({
+  data,
+}: {
+  data: Array<{ day: string; sends: number }>;
+}) {
+  if (!data.some((row) => row.sends > 0)) {
+    return (
+      <p className={styles.compactEmpty}>
+        No confirmed sends in the last 7 days.
+      </p>
+    );
+  }
+  return (
+    <div
+      className={styles.pulseChartFrame}
+      role="img"
+      aria-label="Daily confirmed sends over the last 7 UTC days"
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={data}
+          margin={{ top: 8, right: 4, bottom: 0, left: -18 }}
+          barCategoryGap="42%"
+          accessibilityLayer
+        >
+          <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
+          <XAxis
+            dataKey="day"
+            tickFormatter={(value: string) =>
+              new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                timeZone: "UTC",
+              })
+            }
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: "var(--muted)", fontSize: 11 }}
+          />
+          <YAxis
+            allowDecimals={false}
+            width={46}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: "var(--muted)", fontSize: 11 }}
+          />
+          <Tooltip
+            content={<ChartTooltip />}
+            cursor={{ fill: "var(--surface-hover)" }}
+          />
+          <Bar
+            dataKey="sends"
+            name="Confirmed sends"
+            fill="var(--analysis-green)"
+            radius={[5, 5, 0, 0]}
+            maxBarSize={48}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export function AdminRankedBars({
   items,
   label,

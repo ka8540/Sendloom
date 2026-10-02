@@ -30,3 +30,15 @@ export function formatAdminRelative(
     return `${Math.floor(elapsed / 86_400_000)}d ago`;
   return formatAdminDate(value);
 }
+
+export function formatAdminEventTitle(message: string | null, action: string) {
+  if (
+    message &&
+    message !== action &&
+    !/^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/.test(message)
+  ) {
+    return message;
+  }
+  const readable = action.replace(/[._]+/g, " ").trim();
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}

@@ -90,18 +90,20 @@ export function AdminMetricStrip({
 }
 
 export function AdminSection({
+  id,
   title,
   description,
   action,
   children,
 }: {
+  id?: string;
   title: string;
   description?: string;
   action?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className={styles.section}>
+    <section className={styles.section} id={id}>
       <div className={styles.sectionHead}>
         <div>
           <h2>{title}</h2>
@@ -211,6 +213,53 @@ export function AdminPagination({
           </span>
         )}
       </div>
+    </nav>
+  );
+}
+
+export function AdminCompactPager({
+  page,
+  pageSize,
+  count,
+  href,
+  label,
+}: {
+  page: number;
+  pageSize: number;
+  count: number;
+  href: (page: number) => string;
+  label: string;
+}) {
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  if (count <= pageSize) return null;
+  return (
+    <nav className={styles.compactPager} aria-label={`${label} pages`}>
+      {page > 1 ? (
+        <Link
+          href={href(page - 1) as Route}
+          aria-label={`Previous ${label} page`}
+          title="Previous page"
+        >
+          <ChevronLeft size={17} aria-hidden="true" />
+        </Link>
+      ) : (
+        <span className={styles.compactPagerDisabled} aria-hidden="true">
+          <ChevronLeft size={17} />
+        </span>
+      )}
+      {page < pages ? (
+        <Link
+          href={href(page + 1) as Route}
+          aria-label={`Next ${label} page`}
+          title="Next page"
+        >
+          <ChevronRight size={17} aria-hidden="true" />
+        </Link>
+      ) : (
+        <span className={styles.compactPagerDisabled} aria-hidden="true">
+          <ChevronRight size={17} />
+        </span>
+      )}
     </nav>
   );
 }
