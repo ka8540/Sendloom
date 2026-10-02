@@ -2,7 +2,7 @@
 
 ## Documentation Status
 
-Documentation verified against `8df4224bd68bce4ffbcf453d6d954baecd4b36f0` on `feature/email-otp-verification` on `2026-08-23`.
+The current Finder/Discover product-surface status in this document was checked against `2fd4b8cb8aaa73a7b5d6b75c068e76531b8fb562` on `chore/hide-hunter-finder-ui` on 2026-10-01. Historical implementation notes elsewhere in this long-form reference retain their original context; the table below records the earlier email-OTP verification snapshot.
 
 | Field | Value |
 | --- | --- |
@@ -12,9 +12,9 @@ Documentation verified against `8df4224bd68bce4ffbcf453d6d954baecd4b36f0` on `fe
 | Feature base | `ca87c3c` — `origin/master` at branch creation |
 | Range audited | `ca87c3c..8df4224` — email OTP implementation across auth/account routes, shared libraries, UI, configuration, and tests |
 
-Behavior in this document was verified by reading the current source, Prisma schema, migrations, and Vitest suites on this branch. Commit messages were used only to locate changes, never as evidence. Nothing here describes planned work, design mockups, or code that exists only on another branch.
+For that 2026-08-23 snapshot, behavior was verified by reading source, Prisma schema, migrations, and Vitest suites. Commit messages were used only to locate changes. The Finder/Discover status above is a later update based on the current branch's source and tests; historical version rows below describe when features were introduced, not which UI entries remain live.
 
-Feature verification completed before this documentation revision: `npm test` (157 files, 2,422 tests, all passing), `npm run typecheck`, `npx prisma validate`, `npx prisma generate`, and a migration-free `npx next build` (all clean). Documentation checks: `git diff --check`, relative file/section-link validation, and Mermaid CLI 11.12 parsing of all 17 diagrams across both documents (4 in the README and 13 here), all clean.
+The earlier feature verification recorded `npm test` (157 files, 2,422 tests), `npm run typecheck`, `npx prisma validate`, `npx prisma generate`, and a migration-free `npx next build`. The Finder UI hold was separately verified before this documentation update with 214 passing Vitest files (3,174 tests), typecheck, and a production build. These counts are historical check results, not a claim that every part of this document was re-audited for this edit.
 
 ## Table Of Contents
 
@@ -56,22 +56,22 @@ Sendloom is a full-stack outreach operations platform where users import contact
 
 In production terms, Sendloom is the system of record for a user's outbound run. A sequence is assembled from an import, a mapping, a template, a connected Gmail sender, optional attachments, and a schedule. The platform validates that configuration, creates recipient-level jobs, sends through the user's OAuth-connected Gmail account, records delivery state, applies retry and pacing rules, and surfaces opens, clicks, replies, failures, and safety pauses back into the dashboard.
 
-The current codebase is a Next.js App Router application with React, TypeScript, Prisma, PostgreSQL, Redis, BullMQ-compatible queues, Gmail OAuth, Hunter integration, Apify-backed prospect discovery, optional OpenAI assistance, Recharts visualizations, and local or Cloudflare R2 object storage. The active product surface includes the Overview dashboard, Finder, Discover, Imports, Templates, Sequences, the five-page Analysis workspace, the Account workspace, Eligibility verification, Legal / Anti-Abuse pages, and Admin workspaces.
+The current codebase is a Next.js App Router application with React, TypeScript, Prisma, PostgreSQL, Redis, BullMQ-compatible queues, Gmail OAuth, a retained Hunter integration, Discover prospect discovery, optional OpenAI assistance, Recharts visualizations, and local or Cloudflare R2 object storage. The active operator product surface includes Overview, Discover, Imports, Templates, Sequences, Analysis, and Account. Finder/Hunter.io is on hold in the user interface; its implementation and data remain available for a future decision.
 
 The npm package name remains `mergepilot`, but the product, UI, routes, and documentation identify the application as Sendloom.
 
 ## 2. Product Purpose
 
-Sendloom exists to reduce the operational mess around personalized outreach. Without a unified tool, users commonly manage leads in spreadsheets, find missing emails in Hunter, draft messages in documents, send manually from Gmail, set reminders elsewhere, and track replies in a separate sheet. Sendloom brings those steps into one controlled workflow.
+Sendloom exists to reduce the operational mess around personalized outreach. Users can import a spreadsheet or use Discover to find relevant people, review inferred work contacts, draft messages, send through their own Gmail account, and track replies in one workspace. The older Hunter-backed Finder was once part of this flow and is now held outside the visible product.
 
 Target users include founders, students, recruiters, small teams, agencies, and operators who need structured, low-volume to moderate-volume business outreach from their own Gmail account.
 
 The main workflow is:
 
 1. Create an account and complete eligibility confirmation.
-2. Upload a CSV/XLS/XLSX contact list.
-3. Map spreadsheet columns into reserved fields and merge variables.
-4. Use Finder/Hunter if contact emails are missing.
+2. Upload a CSV/XLS/XLSX contact list or use Discover to find people by company, role, and location.
+3. Map imported columns or review Discover's inferred work contacts and add selected people to an outreach list.
+4. Review the resulting contact list before sending.
 5. Create a template in plain text, HTML, or JSON.
 6. Connect a Gmail sender through Google OAuth.
 7. Create, validate, launch, schedule, or retry a sequence.
@@ -82,7 +82,7 @@ Sendloom is not:
 - An email warming tool.
 - A spam, blast, or anonymous mail relay.
 - A product for minors. Current onboarding requires 18+ confirmation.
-- A native lead database. It stores user-provided imports and Hunter search history, but it does not ship with a built-in lead database.
+- A prepackaged lead database. It stores user-provided imports, Discover's durable public-people knowledge and private allocations, and retained historical Hunter search data.
 - A guarantee of deliverability. Gmail, recipient servers, recipient behavior, and email clients can still reject, throttle, or hide activity.
 
 ## 3. Version History
@@ -179,7 +179,6 @@ flowchart TD
     Public["Public: / · /login · /signup · /faq · /privacy · /terms · /abuse"] --> Gate["/verify-eligibility"]
     Gate --> Shell["Authenticated app shell"]
     Shell --> OV["Overview /workspace"]
-    Shell --> FI["Finder /finder"]
     Shell --> DI["Discover /prospects"]
     DI --> DID["Discover search detail"]
     Shell --> IM["Imports /imports"]
@@ -196,7 +195,7 @@ flowchart TD
     Shell --> AD["Admin /admin ..."]
 ```
 
-Seven items appear in the operator product nav (Overview, Finder, Discover, Imports, Templates, Sequences, Analysis). Account sits in the sidebar footer as a utility item rather than in the product nav. Admin accounts see the admin nav instead of the operator nav. Public and legal pages are outside the shell and carry the marketing navigation.
+Six items appear in the operator product nav (Overview, Discover, Imports, Templates, Sequences, Analysis). Account sits in the sidebar footer as a utility item rather than in the product nav. Admin accounts see the admin nav instead of the operator nav. Public and legal pages are outside the shell and carry the marketing navigation. The retained `/finder` URL redirects to `/prospects` and is not a navigation destination.
 
 ### Overview
 
@@ -217,7 +216,7 @@ Layout, top to bottom:
 3. **Quick actions** — Create sequence, Import list, Create template.
 4. **Recent sequences** — the three most recently updated sequences with a client-side search over name and summary, per-row status/progress/metrics, row actions (view, pause/resume, relaunch, delete), and a "View all sequences" link. Refresh polls every 4 seconds while a run is live, pauses while the tab is hidden, and resumes shortly after the tab becomes visible again.
 5. **Gmail send window card** — rolling 24-hour usage for the combined user window plus the primary connected sender, with a tone of Healthy / Near limit / Blocked / Paused. "Near limit" starts at 80% of the configured per-sender limit.
-6. **Recent activity** — derived from domain tables (runs, imports, templates, Discover searches and expansions, Finder domain searches, prepared Discover exports, and confirmed permanent delivery failures). It is not the admin audit console; only two audit actions (`hunter.email_search`, `discover.results_exported`) are read, because those activities have no durable domain row.
+6. **Recent activity** — derived from domain tables (runs, imports, templates, Discover searches and expansions, historical Hunter domain searches, prepared Discover exports, and confirmed permanent delivery failures). It is not the admin audit console; only two audit actions (`hunter.email_search`, `discover.results_exported`) are read, because those activities have no durable domain row. Historical lookup rows are presented with neutral contact-lookup wording and link to `/prospects`, never the retired Finder page.
 
 Empty states: each section renders its own empty copy rather than hiding; the send-window card renders an unavailable state when the send ledger table cannot be read. Both themes are supported through the shared token layer; no Overview surface is light- or dark-only.
 
@@ -280,21 +279,25 @@ Important routes:
 - API: `GET /api/account`, `POST /api/account/password`, `POST /api/account/password/verify`, `POST /api/account/password/resend`, `DELETE /api/account/senders/[id]`, `GET /api/auth/google/connect`
 - Data: `User`, `SenderProfile`, `Campaign`, `AuditLog`
 
-### Finder
+### Finder on hold: implementation notes
 
-Finder lives at `/finder` and uses Hunter through server-side API routes. Users can save their own Hunter API key, find one email by name and domain, run domain searches, review saved domain search history, group domain results by inferred department, select contacts, and export selected contacts to CSV in the browser.
+**Product decision.** Finder was the Hunter.io-backed path for a single email lookup by name/domain and for company-domain search. Discover now owns the visible prospect-discovery workflow. A user can start from an import or search Discover by company, role, and location, review inferred work contacts, add selected people to an import/list, create a sequence, send with Gmail, and inspect results. Finder and Hunter key setup are deliberately absent from the normal sidebar, landing page, FAQ, and route-specific help.
 
-Important routes:
+**Routing.** The route file `src/app/(app)/finder/page.tsx` remains. It calls Next.js `redirect("/prospects")` on the server and does not render `HunterDashboard`. Old bookmarks and links therefore reach Discover without a Finder screen flash. `src/manuals/index.ts` no longer maps `/finder` to a user guide; `finderManual.ts` remains as legacy source.
 
-- UI: `/finder`
-- API: `/api/save-api-key`, `/api/email-finder`, `/api/domain-search`, `/api/domain-search/[id]`
-- Data: `User.hunterApiKeyEncrypted`, `User.hunterApiKeyLast4`, `HunterDomainSearch`
+**What was retained.** This is a UI hold, not a backend removal:
 
-Production notes:
+| Retained part | Source and purpose |
+| --- | --- |
+| Hunter client and key encryption | `src/lib/hunter.ts`, `src/lib/hunter-crypto.ts`, `src/services/hunter-keys.ts`; per-user API keys remain encrypted. |
+| Saved domain searches | `src/services/hunter-domain-searches.ts`, `HunterDomainSearch`, existing results/history, and additive migrations remain. The service tolerates a missing history table during partial rollout. |
+| API handlers | `POST /api/save-api-key`, `POST /api/email-finder`, `POST /api/domain-search`, `GET /api/domain-search/[id]` remain implemented with their existing auth and rate limits. Searches still require a saved user key. These routes were **not disabled**, so the UI hold must not be treated as an API security boundary. |
+| Dormant presentation | `src/components/hunter-dashboard.tsx` and its CSS, plus `src/manuals/finderManual.ts`, remain for possible reuse but are no longer reachable through `/finder` or normal help navigation. |
+| History and audit | `User.hunterApiKeyEncrypted`/`hunterApiKeyLast4`/`hunterApiKeyUpdatedAt`, `HunterDomainSearch`, `hunter.*` audit action names, and admin audit records remain intact. Overview can still read old lookup rows; their displayed titles are neutral and their links point to `/prospects`. |
 
-- Hunter keys are AES-256-GCM encrypted with `HUNTER_KEY_ENCRYPTION_SECRET` in production.
-- Domain search history is stored per user when the `HunterDomainSearch` table exists.
-- The code gracefully returns empty history if the saved-search table is missing, which helps during partial migrations.
+**Discover boundary.** Discover does not use the old Finder UI or a user's Hunter API key to provide its normal workflow. Its provider search, durable Postgres knowledge, Redis acceleration, quotas, Add More behavior, candidate validation, and email inference were not changed for this hold. Public Hunter.io pages can still appear as evidence for a company's email format; that evidence path is separate from the retained Hunter API. When historical Hunter evidence is shown in the Discover detail view, its display label is neutral, while the underlying source and provenance remain available to the inference code.
+
+**Reactivation.** Bringing Finder back should be a separate, reviewed product change: decide whether it adds value alongside Discover, review whether retained endpoints should remain callable during the hold, verify stored-key and migration compatibility, update the UI and help content, and exercise authenticated route/API tests. Do not remove old keys, searches, audit records, or internal Discover evidence just to make source-code searches for “Hunter” return zero.
 
 ### Imports
 
@@ -421,9 +424,9 @@ flowchart TD
     D -->|No| E["Confirm 18+, Terms, Privacy, Anti-Abuse"]
     E --> F["Workspace overview"]
     D -->|Yes| F
-    F --> G["Upload CSV/XLS/XLSX import"]
-    G --> H["Review columns and save mappings"]
-    H --> I["Use Finder/Hunter if emails are missing"]
+    F --> G["Import a list or search Discover"]
+    G --> H["Map columns or review inferred work contacts"]
+    H --> I["Add selected people to an outreach list"]
     I --> J["Create or edit template"]
     J --> K["Connect Gmail sender"]
     K --> L["Create sequence with schedule and attachments"]
@@ -442,10 +445,10 @@ Normal user flow:
 
 1. The user signs up with email/password or Google, or logs in. Email/password signup creates a pending Redis challenge and creates the `User` only after the emailed six-digit code is verified; the Google path is unchanged.
 2. Non-admin users are redirected to `/verify-eligibility` until they confirm adult eligibility and accept policies.
-3. The user uploads a CSV/XLS/XLSX import at `/imports`.
-4. Sendloom parses columns, sample rows, normalized rows, and creates an initial mapping.
-5. The user maps reserved fields and template variables.
-6. The user uses Finder if needed, saving a Hunter key and running email/domain searches.
+3. The user uploads a CSV/XLS/XLSX import at `/imports` or searches Discover at `/prospects`.
+4. For imports, Sendloom parses columns and sample rows; for Discover, the user reviews relevant people and inferred work contacts.
+5. The user maps imported fields or adds selected Discover people to an import/list, then reviews the resulting contacts.
+6. The legacy Finder/Hunter setup is not part of this normal workflow.
 7. The user creates a template in `/templates`, optionally using spam analysis and AI enhancement.
 8. The user connects Gmail through `/api/auth/google/connect`.
 9. The user creates a sequence in `/campaigns`.
@@ -527,7 +530,7 @@ flowchart TD
     Storage --> R2["Cloudflare R2"]
     Services --> Gmail["Google OAuth and Gmail API"]
     API --> Resend["Resend auth verification email"]
-    Services --> Hunter["Hunter API"]
+    Services --> Hunter["Hunter API (retained legacy path)"]
     Services --> OpenAI["OpenAI Responses API"]
     Gmail --> Replies["Reply sync"]
     Gmail --> Sends["Message send"]
@@ -545,7 +548,8 @@ Runtime shape:
 | Email sending | Gmail API via OAuth2 and Nodemailer `MailComposer` | Current production sending path is Gmail-centered. |
 | Authentication email | Resend | Sendloom-owned signup and password-change OTP messages; separate from connected Gmail senders. |
 | Reply sync | Gmail readonly API | Lists inbox messages and matches replies by references/thread fallback. |
-| Finder | Hunter API | User-provided API keys encrypted at rest. |
+| Discover | Firecrawl, Tavily, Bright Data, Apify, Postgres, Redis | Current company/role/location search, durable public knowledge, and user-scoped allocations. |
+| Retained Finder | Hunter API | Legacy endpoints and encrypted user keys remain; the UI is on hold. |
 | AI assistance | OpenAI Responses API | Optional subject/body enhancement and spam copy cleanup. |
 | Storage | Local filesystem or Cloudflare R2 | Separate buckets/key namespaces for imports and attachments. |
 | Security | JWT sessions, CSRF, Redis rate limits, CSP/security headers | Details in [Security Controls](#15-security-controls). |
@@ -573,7 +577,7 @@ Runtime shape:
 | Route | Purpose | Auth | Notes |
 | --- | --- | --- | --- |
 | `/workspace` | Overview dashboard | Verified non-admin user | Admin users redirect to admin surface. |
-| `/finder` | Hunter Finder | Verified user | Requires saved Hunter key for searches. |
+| `/finder` | Legacy compatibility URL | Verified user | Server redirects to `/prospects`; no Finder UI is rendered. |
 | `/prospects` | Discover — Search History | Verified user | One row per company, grouped from that company's searches. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; server-paginated at 10/page. |
 | `/prospects/[searchId]` | Discover — search detail | Verified owner | Company summary, email-format editor, role groups, people table, inline same-company search, Add 10 more, XLSX export. |
 | `/imports` | Import library and workflow | Verified user | CSV/XLS/XLSX upload, mapping, and template fields; mode is URL-identifiable. |
@@ -657,10 +661,10 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `POST /api/graphql` | Discover graph | Verified user | Gated by `PROSPECT_GRAPH_ENABLED`; see [§23](#23-prospect-graph-backend-local-graphql-prototype). |
 | `GET /api/send-window` | Gmail daily send windows | Verified user | Per sender plus user rollup. |
 | `POST /api/send` | Test email to own account | Verified user | Locked to authenticated user's email, not a relay. |
-| `POST /api/save-api-key` | Save Hunter API key | Verified user | 10/min user, encrypted at rest. |
-| `POST /api/email-finder` | Hunter email finder | Verified user | 60/min user. |
-| `POST /api/domain-search` | Hunter domain search | Verified user | 30/min user, saves history. |
-| `GET /api/domain-search/[id]` | Load saved domain search | Verified owner | User-scoped. |
+| `POST /api/save-api-key` | Retained Hunter key setup API | Verified user | Legacy route remains callable; 10/min user, encrypted at rest. No normal UI entry point. |
+| `POST /api/email-finder` | Retained Hunter single-email lookup API | Verified user | Legacy route remains callable; 60/min user and requires a saved key. |
+| `POST /api/domain-search` | Retained Hunter domain-search API | Verified user | Legacy route remains callable; 30/min user, requires a saved key, saves history. |
+| `GET /api/domain-search/[id]` | Load retained saved domain search | Verified owner | User-scoped legacy history route; no normal UI entry point. |
 | `GET /api/suppressions` | List suppressions | Verified user | Backend remains although UI is hidden. |
 | `POST /api/suppressions` | Add suppression | Verified user | Manual/internal use. |
 | `DELETE /api/suppressions/[id]` | Delete suppression | Verified owner | Manual/internal use. |
@@ -1169,9 +1173,9 @@ Redis-backed rate limits protect:
 | Template AI enhance | user | 20/min |
 | Campaign create/update/delete/validate/pause/resume | user | route-specific 10 to 30/min |
 | Campaign launch/retry failed | user | 10/min |
-| Finder email search | user | 60/min |
-| Domain search | user | 30/min |
-| Save Hunter key | user | 10/min |
+| Retained Finder email search API | user | 60/min |
+| Retained domain search API | user | 30/min |
+| Retained Hunter key API | user | 10/min |
 | Admin user update/delete/search/activity | admin user | route-specific 10 to 120/min |
 
 In production, Redis rate-limit failures throw instead of silently allowing. In development, the code may allow through if Redis is unavailable.
@@ -1223,8 +1227,8 @@ The landing page is a branded marketing page with:
 - Animated email path background.
 - Landing pointer effects.
 - Glass/floating nav that changes on scroll.
-- Product story around Import, Enrich, Template, Sequence, Follow-up, Track.
-- Capability cards for imports, Hunter, templates, Gmail, scheduling, and tracking.
+- Product story around Imports, Discover, building an outreach list, Sequences, Gmail sending, and tracking.
+- The third Data story shows selected Discover contacts being added to outreach; no Hunter setup or Finder marketing appears.
 - Responsible-outreach trust points.
 - Theme switcher.
 
@@ -1268,7 +1272,6 @@ Full behavior is documented in [§31](#31-navigation-and-shared-page-shell). In 
 Operator nav:
 
 - Overview (`/workspace`)
-- Finder (`/finder`)
 - Discover (`/prospects`)
 - Imports (`/imports`)
 - Templates (`/templates`)
@@ -1322,7 +1325,7 @@ Theme support appears across landing, legal pages, dashboard, auth, footer, and 
 | `GOOGLE_CLIENT_ID` | Required for Google login/Gmail | OAuth client id. | None | Configure both login and Gmail connect callbacks. |
 | `GOOGLE_CLIENT_SECRET` | Required for Google login/Gmail | OAuth client secret. | None | Enable Gmail API in the Google Cloud project. |
 | `OPENAI_API_KEY` | Optional | Template AI enhancement and spam fix. | None | AI endpoint fails with a user error if missing. |
-| `HUNTER_KEY_ENCRYPTION_SECRET` | Required in production | Encrypts stored Hunter API keys. | Dev fallback to `SESSION_SECRET` derived key | Set before saving production Hunter keys; rotation requires planning. |
+| `HUNTER_KEY_ENCRYPTION_SECRET` | Required in production | Encrypts retained stored Hunter API keys, even while Finder UI is on hold. | Dev fallback to `SESSION_SECRET` derived key | Production env validation still requires this secret; rotation requires planning. |
 | `CRON_SECRET` | Required in production | Protects `/api/cron/campaigns`. | Dev can run without it | Production cron route fails closed if missing. |
 | `RESEND_API_KEY` | Required for email signup/password changes | Sends Sendloom-owned signup and password-change OTP messages. | None | Independent from connected Gmail senders. Without it the OTP start routes return a generic 503. |
 | `RESEND_WEBHOOK_SECRET` | Required for Resend webhooks in production | HMAC verification for `/api/webhooks/resend`. | None | Webhook fails closed in production when missing. |
@@ -1363,7 +1366,7 @@ Prerequisites:
 - Redis.
 - Google OAuth credentials for Google login/Gmail sending.
 - `AUTH_OTP_SECRET`, a Resend API key, and a verified `DEFAULT_FROM_EMAIL` to exercise email/password signup and account password changes.
-- Optional Hunter and OpenAI credentials.
+- Optional OpenAI credentials. A Hunter user key is needed only to exercise the retained legacy API directly; it is not part of the normal local workflow.
 
 Install and run:
 
@@ -1459,7 +1462,7 @@ Secrets rotation:
 | R2 upload failure | Import or attachment upload fails. | Missing R2 env, bad bucket/token, storage outage. | `/admin/system-health`, storage env vars, R2 dashboard, route response. | Fix R2 credentials/buckets; retry upload. Local mode can be used only where filesystem persistence is acceptable. |
 | Cron not running | Scheduled sequences do not start; replies not syncing. | External cron/Vercel cron not configured or wrong secret. | `/admin/system-health` cron check, host cron logs, `/api/cron/campaigns` status. | Configure cron with correct `CRON_SECRET`; test GET/POST manually. |
 | OpenAI unavailable | AI enhance/fix-spam returns error. | Missing/invalid `OPENAI_API_KEY` or API outage. | `/api/templates/enhance` response, logs. | Save template manually; retry later; verify key. |
-| Hunter unavailable | Finder returns Hunter errors. | Missing key, invalid key, Hunter 429/5xx, malformed domain. | Finder UI error, `/api/email-finder`, `/api/domain-search`, Hunter dashboard. | Update Hunter key, wait out rate limit, retry with normalized domain. |
+| Retained Hunter API unavailable | A direct call to a legacy lookup API returns an error; the Discover UI is unaffected by this old API path. | Missing key, invalid key, Hunter 429/5xx, malformed domain. | `/api/email-finder` or `/api/domain-search` response and server logs. | For approved legacy maintenance, verify the stored key, rate limit, and normalized domain. Do not direct normal users to the dormant Finder UI. |
 | Admin restriction issue | User cannot call APIs or launch sequences. | Admin toggled restriction/capability or `restrictedAt` set. | `/admin/users`, `/admin/restrictions`, `User` flags, `AuditLog`. | Admin unrestricts or re-enables specific capability. |
 | Eligibility gate issue | User loops to `/verify-eligibility` or API returns forbidden. | Missing acceptance timestamps, self-reported ineligible, or restricted. | `User` compliance fields, `/api/auth/eligibility-status`, audit logs. | If eligible, complete gate; if incorrectly restricted, admin reviews and unrestricts. Blocked under-18 self-report should not be bypassed casually. |
 | Tracking not updating | Opens/clicks do not appear. | Email client blocks images, token expired/invalid, tracking secret rotated, click target rejected. | Tracking route logs, `RecipientJob.status`, `TRACKING_SECRET`, recipient email client behavior. | Do not rely on tracking as definitive; verify secret rotation impact. |
@@ -1483,7 +1486,7 @@ Secrets rotation:
 - Reply sync depends on Gmail access, Gmail API availability, message headers, and thread matching.
 - Open tracking depends on the recipient's email client loading images.
 - Click tracking depends on links being generated through same-origin tracking URLs; current code mainly shows the route and token support.
-- Finder depends on the user's Hunter API key and Hunter's provider limits/data.
+- Finder is on hold in the normal UI. Its authenticated APIs remain callable, and any direct legacy use still depends on a saved user Hunter key and Hunter's limits/data; the UI hold itself is not an API disablement.
 - Suppression backend exists, but the operator suppression UI is hidden and `/suppressions` redirects to `/workspace`.
 - Public legal pages include retention/minimization language, but no automated 30-day purge worker was found in the current code.
 - Old historical audit logs may not include newer actor/category/severity/IP/user-agent fields.
@@ -2424,7 +2427,7 @@ call `POST /api/graphql` through a small typed helper
 Pure presentation and branching logic lives in
 `src/components/prospects/prospect-view.ts` and is unit-tested in the node
 environment with no DOM. When the feature flag is off, both routes render a clean
-"Prospect Finder is not available right now." card — never backend or debug
+"Discover is not available right now." card — never backend or debug
 language.
 
 **`/prospects` — Search History list**
@@ -2516,12 +2519,12 @@ Authenticated layout (ManualProvider, mounted once in src/app/layout.tsx)
 ### 24.2 Route registry
 
 `getManualForPathname(pathname)` returns the config for: `/workspace` (Overview),
-`/finder`, `/imports`, `/templates`, `/campaigns` (Sequences),
+`/imports`, `/templates`, `/campaigns` (Sequences),
 `/campaigns/new` + `/sequences/new` (sequence creation), `/campaigns|/sequences/[id]`
 (Sequence detail), `/prospects` + `/prospects/[id]` (Discover list/detail), every
 `/analysis*` route (one shared Analysis guide), and every `/admin*` route (one
-adaptive admin guide). Public/auth/legal routes return `null`, so the button never
-appears off the dashboard.
+adaptive admin guide). `/finder` and public/auth/legal routes return `null`, so the button never
+appears on a retired or non-dashboard route.
 
 Match order matters: `/campaigns/new` is tested before the `/campaigns/[id]` pattern
 because they share a URL shape.

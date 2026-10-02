@@ -15,7 +15,6 @@ const SEQUENCE_DETAIL_SOURCE = readFileSync("src/app/(app)/campaigns/[id]/page.t
 // button, with the route-specific label/tooltip it must show.
 const DASHBOARD_ROUTES: Array<{ path: string; id: string; label: string; tooltip: string }> = [
   { path: "/workspace", id: "workspace", label: "Help with Overview", tooltip: "Overview guide" },
-  { path: "/finder", id: "finder", label: "Help with Finder", tooltip: "Finder guide" },
   { path: "/imports", id: "imports", label: "Help with Imports", tooltip: "Imports guide" },
   { path: "/templates", id: "templates", label: "Help with Templates", tooltip: "Templates guide" },
   { path: "/campaigns", id: "campaigns", label: "Help with Sequences", tooltip: "Sequences guide" },
@@ -56,6 +55,7 @@ const EXCLUDED_ROUTES = [
   "/terms",
   "/abuse",
   "/faq",
+  "/finder",
   "/verify-eligibility",
   "/unsubscribe/token",
   "/suppressions",

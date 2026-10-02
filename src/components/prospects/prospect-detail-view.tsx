@@ -2604,15 +2604,18 @@ function EmailFormatPanel({
 }
 
 function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceName: string; sourceUrl: string | null }) {
+  // Historical Hunter evidence can still inform an inference without bringing
+  // the retired Finder provider name into the Discover workspace.
+  const displaySourceName = /hunter/i.test(sourceName) ? "Public email format source" : sourceName;
   return (
     <span className={styles.evidenceItem}>
       <span>{label}</span>
       {sourceUrl ? (
         <a href={sourceUrl} target={EXTERNAL_LINK_TARGET} rel={EXTERNAL_LINK_REL}>
-          {sourceName} <ExternalLink aria-hidden="true" />
+          {displaySourceName} <ExternalLink aria-hidden="true" />
         </a>
       ) : (
-        <span className={styles.evidenceSource}>{sourceName}</span>
+        <span className={styles.evidenceSource}>{displaySourceName}</span>
       )}
     </span>
   );

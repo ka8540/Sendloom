@@ -52,7 +52,7 @@ describe("Discover manual registration (list + detail)", () => {
   });
 
   it("does not change other route manuals", () => {
-    expect(getManualForPathname("/finder")?.id).toBe("finder");
+    expect(getManualForPathname("/finder")).toBeNull();
     expect(getManualForPathname("/campaigns")?.id).toBe("campaigns");
     expect(getManualForPathname("/campaigns/abc")?.id).toBe("campaign-detail");
     expect(getManualForPathname("/unknown")).toBeNull();

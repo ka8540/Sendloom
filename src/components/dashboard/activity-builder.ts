@@ -299,8 +299,8 @@ function buildDomainSearchItems(domainSearches: RecentDomainSearchInput[]): Sort
 
     items.push({
       id: `finder-domain-${search.id}`,
-      href: "/finder",
-      title: `${search.domain} Finder search completed`,
+      href: "/prospects",
+      title: `${search.domain} contact lookup completed`,
       description: `${formatCompactNumber(search.resultCount)} work-email ${pluralize(search.resultCount, "result was", "results were")} returned.`,
       timeLabel: formatRelativeTime(search.updatedAt),
       timeValue: search.updatedAt.toISOString(),
@@ -329,8 +329,8 @@ function buildAuditItems(events: RecentActivityAuditInput[]): SortableActivityIt
       const domain = metadataString(meta, "domain") ?? "the requested company";
       items.push({
         id: `finder-email-${event.id}`,
-        href: "/finder",
-        title: "Finder located a work email",
+        href: "/prospects",
+        title: "Work email found",
         description: `A work email result was found for ${domain}.`,
         timeLabel: formatRelativeTime(event.createdAt),
         timeValue: event.createdAt.toISOString(),

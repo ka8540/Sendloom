@@ -20,7 +20,7 @@ function contentDisposition(fileName: string) {
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!env.PROSPECT_GRAPH_ENABLED) {
-    return NextResponse.json({ error: "Prospect Finder is not available right now." }, { status: 404 });
+    return NextResponse.json({ error: "Discover is not available right now." }, { status: 404 });
   }
 
   const auth = await requireApiUser();

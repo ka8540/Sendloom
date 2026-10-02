@@ -22,8 +22,8 @@ const quickFacts = [
     body: "Bring in CSV or XLSX files, preview rows, and map spreadsheet columns into outreach fields."
   },
   {
-    title: "Finder",
-    body: "Use Hunter-powered lookup tools to search by name, domain, or company domain."
+    title: "Discover",
+    body: "Find relevant people by company, role, and location, then review inferred work contacts."
   },
   {
     title: "Templates",
@@ -61,7 +61,7 @@ const faqSections = [
       {
         question: "What is Sendloom?",
         answer:
-          "Sendloom is an outreach operations platform that helps you import contacts, find missing emails, write messages, connect Gmail, launch sequences, and track outreach from one workspace."
+          "Sendloom is an outreach operations platform that helps you import contacts or discover relevant people, review work contacts, write messages, connect Gmail, launch sequences, and track outreach from one workspace."
       },
       {
         question: "Who is Sendloom built for?",
@@ -81,8 +81,8 @@ const faqSections = [
     ]
   },
   {
-    id: "imports-and-finder",
-    title: "Imports and Finder",
+    id: "imports",
+    title: "Imports",
     items: [
       {
         question: "What file types can I import?",
@@ -93,26 +93,6 @@ const faqSections = [
         question: "Can Sendloom detect my spreadsheet columns?",
         answer:
           "Yes. Sendloom includes column detection, preview rows, template-field selection, and mapping review so users can connect imported data to email templates."
-      },
-      {
-        question: "What is Finder?",
-        answer:
-          "Finder helps users discover missing email addresses using Hunter-powered email finder and domain search features."
-      },
-      {
-        question: "Do I need my own Hunter API key?",
-        answer:
-          "Sendloom supports per-user Hunter API key storage. Users can add their own Hunter key to use Finder and domain search features."
-      },
-      {
-        question: "Can I search for emails by name and domain?",
-        answer:
-          "Yes. Finder supports email lookups using a person's name and company domain when Hunter data is available."
-      },
-      {
-        question: "Can I search for contacts from a company domain?",
-        answer:
-          "Yes. Domain search allows users to discover available contacts associated with a company domain."
       }
     ]
   },
@@ -123,7 +103,7 @@ const faqSections = [
       {
         question: "What is Discover?",
         answer:
-          "Discover helps you find relevant professional profiles and infer likely work email addresses, so you can build a focused outreach list. It can draw on public professional information, company and domain patterns, source evidence, and provider results."
+          "Discover helps you find relevant professional profiles and infer likely work email addresses, so you can build a focused outreach list. Search by company, role, and location, then review the people and available evidence."
       },
       {
         question: "Are Discover emails verified?",
@@ -138,7 +118,7 @@ const faqSections = [
       {
         question: "Why do some people show unavailable emails?",
         answer:
-          "Some profiles do not have a usable inferred email. This can happen when there is not enough public evidence, the company pattern is unclear, or providers return no reliable match. Those people are shown without a usable address rather than with a guessed one."
+          "Some profiles do not have a usable inferred email. This can happen when there is not enough public evidence or the company pattern is unclear. Those people are shown without a usable address rather than with a guessed one."
       },
       {
         question: "What does Add more people do?",
@@ -377,7 +357,7 @@ export default function FaqPage() {
               <p className={legalStyles.articleEyebrow}>FAQ</p>
               <h2 className={legalStyles.articleTitle}>Common questions, direct answers.</h2>
               <p className={legalStyles.articleIntro}>
-                The sections below cover the full Sendloom workflow, from first import through Finder, templates, Gmail,
+                The sections below cover the full Sendloom workflow, from imports and Discover through templates, Gmail,
                 sequences, and reporting.
               </p>
             </header>

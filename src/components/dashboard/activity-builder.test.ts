@@ -203,9 +203,9 @@ describe("activity builder — Finder", () => {
     const items = build({ recentActivityAuditEvents: [auditEvent()] });
     expect(items).toHaveLength(1);
     expect(items[0].eventType).toBe("finder_email_found");
-    expect(items[0].title).toBe("Finder located a work email");
+    expect(items[0].title).toBe("Work email found");
     expect(items[0].description).toBe("A work email result was found for reddit.com.");
-    expect(items[0].href).toBe("/finder");
+    expect(items[0].href).toBe("/prospects");
   });
 
   it("never includes the discovered email address (#finder-2)", () => {
@@ -234,9 +234,9 @@ describe("activity builder — Finder", () => {
     });
     expect(items).toHaveLength(1);
     expect(items[0].eventType).toBe("finder_domain_search");
-    expect(items[0].title).toBe("stripe.com Finder search completed");
+    expect(items[0].title).toBe("stripe.com contact lookup completed");
     expect(items[0].description).toBe("12 work-email results were returned.");
-    expect(items[0].href).toBe("/finder");
+    expect(items[0].href).toBe("/prospects");
   });
 
   it("uses singular wording for a single domain-search result", () => {
@@ -253,7 +253,7 @@ describe("activity builder — Finder", () => {
     expect(items).toHaveLength(0);
   });
 
-  it("uses the product name 'Finder' and never the provider name (#finder-6)", () => {
+  it("keeps legacy lookup activity free of retired branding (#finder-6)", () => {
     const items = build({
       recentDomainSearches: [{ id: "dom-1", domain: "stripe.com", resultCount: 3, updatedAt: new Date() }],
       recentActivityAuditEvents: [auditEvent()]
@@ -261,6 +261,7 @@ describe("activity builder — Finder", () => {
     for (const item of items) {
       const text = `${item.title} ${item.description}`.toLowerCase();
       expect(text).not.toContain("hunter");
+      expect(text).not.toContain("finder");
       expect(text).not.toContain("api key");
       expect(text).not.toContain("apikey");
     }
@@ -418,7 +419,7 @@ describe("activity builder — ordering, limit, timestamps", () => {
     });
     expect(items.map((item) => item.title)).toEqual([
       "New Co results are ready",
-      "mid.com Finder search completed",
+      "mid.com contact lookup completed",
       "Old Co results are ready"
     ]);
   });
