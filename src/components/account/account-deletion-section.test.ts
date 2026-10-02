@@ -10,6 +10,9 @@ describe("Account deletion settings", () => {
     expect(source).toContain('type="radio"');
     expect(source).toContain("disabled={!selection}");
     expect(source).toContain("onClick={onKeepUsing}");
+    expect(source).toContain('href="/privacy"');
+    expect(source).toContain('href="/terms"');
+    expect(source).toContain("We'll try to send a farewell email");
     expect(source).toContain("<AppConfirmDialog");
     expect(source).toContain("/api/account/deletion/cancel");
   });

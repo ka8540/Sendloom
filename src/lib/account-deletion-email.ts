@@ -10,7 +10,7 @@ const messages: Record<DeletionEmailKind, { subject: string; headline: string; p
     paragraphs: [
       "Your Sendloom account has been deleted successfully.",
       "We're sad to see you go, but we're grateful you chose Sendloom to be part of your outreach journey.",
-      "If you ever decide to come back, our doors are always open. You can create a new account anytime and start fresh.",
+      "If you decide to return, you can create a new account if you meet Sendloom's eligibility rules and no security or enforcement restriction applies.",
       "Thanks for choosing Sendloom, even if it was only for a little while.",
     ],
   },
@@ -20,7 +20,7 @@ const messages: Record<DeletionEmailKind, { subject: string; headline: string; p
     paragraphs: [
       "We've received your request to delete your Sendloom account and outreach data.",
       "Your request is pending administrative review. Permanent outreach-data deletion has not completed yet.",
-      "We're grateful you chose Sendloom for your outreach. If you return in the future, our doors will be open.",
+      "We're grateful you chose Sendloom for your outreach. You can cancel this request while it is still pending review if you decide to stay.",
     ],
   },
   FULL_DELETION_COMPLETE: {
@@ -28,7 +28,7 @@ const messages: Record<DeletionEmailKind, { subject: string; headline: string; p
     headline: "Your deletion is complete",
     paragraphs: [
       "Your requested Sendloom account and outreach-data deletion has been completed.",
-      "Thank you again for using Sendloom. If our paths cross again someday, we'll be happy to have you back. 💚",
+      "Thank you again for using Sendloom. You can create a new account later if you meet our eligibility rules and no security or enforcement restriction applies. 💚",
     ],
   },
 };

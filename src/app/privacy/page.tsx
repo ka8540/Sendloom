@@ -14,8 +14,8 @@ const highlights = [
   },
   {
     label: "Your control",
-    value: "You decide",
-    detail: "You can stop using the service, revoke Google access, or request deletion of account data."
+    value: "Two deletion choices",
+    detail: "Account Settings offers account-only deletion or a reviewed request to remove eligible private outreach data."
   },
   {
     label: "Age policy",
@@ -39,7 +39,7 @@ const quickFacts = [
   },
   {
     title: "Deletion requests",
-    body: "You can request account data deletion by emailing the contact listed on this page."
+    body: "Eligible accounts can choose a deletion scope in Account Settings. Full private-data deletion is reviewed before processing."
   },
   {
     title: "Eligibility enforcement",
@@ -55,19 +55,19 @@ export default function PrivacyPage() {
       commitments={[
         "Google account access stays tied to the product action you choose.",
         "Operational data supports sending, tracking, and suppression workflows.",
-        "You can revoke access or request deletion whenever you need to.",
+        "Eligible account holders can choose deletion options in Account Settings.",
         "No unnecessary data is collected from unverified or ineligible users."
       ]}
       description="This Privacy Policy explains what information Sendloom collects, how it is used, and what control you keep over the data attached to your account."
       eyebrow="Trust and transparency"
-      guideBody="Everything below keeps the original policy substance, but the flow is organized so the answers are easier to scan before you log in, connect Google, or upload a list."
+      guideBody="Review what Sendloom collects and uses, then see what each deletion choice removes and which limited records may remain."
       guideTitle="The short read"
       highlights={highlights}
       lastUpdated={policy.lastUpdated}
       quickFacts={quickFacts}
       relatedHref="/terms"
       relatedLabel="Read terms"
-      sectionBody="This policy is organized around the questions people usually ask first: what gets collected, what Google access is used for, where the data lives, and what choices you still have after you connect your account."
+      sectionBody="This policy covers what Sendloom collects, how connected data is used, the two deletion choices, and which records may remain."
       sectionEyebrow="Privacy details"
       sectionTitle="What Sendloom collects, uses, and keeps."
       sections={policy.sections}

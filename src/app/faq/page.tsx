@@ -81,6 +81,44 @@ const faqSections = [
     ]
   },
   {
+    id: "account-and-data-deletion",
+    title: "Account and data deletion",
+    items: [
+      {
+        question: "Can I delete my Sendloom account?",
+        answer: "Yes. Eligible non-admin accounts can open Account Settings, expand Delete account, and choose account-only deletion or request deletion of the account and eligible private outreach data."
+      },
+      {
+        question: "What's the difference between deleting my account and deleting my account and data?",
+        answer: "Delete my account ends sign-in access and clears account and Gmail credentials, while leaving private outreach records under a deleted-account reference. Delete my account and outreach data requests an additional purge of eligible private workspace records and stored files after review."
+      },
+      {
+        question: "What happens to my outreach data if I only delete my account?",
+        answer: "Your existing outreach workspace records are retained under a non-login deleted-account reference. Account-only deletion stops active sending and clears connected Gmail credentials, but it does not request deletion of those outreach records."
+      },
+      {
+        question: "How do I delete my outreach data?",
+        answer: "In Account Settings, choose Delete my account and outreach data. The request is shown as pending while an administrator reviews it. You can cancel while it is pending. A rejected request does not start a purge; eligible private data is removed after approval and successful processing."
+      },
+      {
+        question: "Why does full data deletion require review?",
+        answer: "The review is used to verify the request and its scope, protect against fraud, and safely carry out an irreversible purge of eligible private data."
+      },
+      {
+        question: "What information can remain after deletion?",
+        answer: "Account-only deletion keeps outreach workspace records. After either choice, limited audit and security history can remain with direct account identifiers removed or replaced. Full deletion removes eligible private Discover activity, but independently stored public business profiles can remain."
+      },
+      {
+        question: "Can I come back to Sendloom after deleting my account?",
+        answer: "You can create a new account later if you meet the eligibility rules and no security or enforcement restriction prevents access. Your deleted account cannot be reopened."
+      },
+      {
+        question: "Will I receive confirmation when I delete my account?",
+        answer: "Sendloom attempts to email a farewell after account-only deletion, a receipt after a full-data request, and a completion notice after successful full deletion. These service emails use Sendloom's transactional email provider, not your connected Gmail account; delivery can fail without reversing deletion."
+      }
+    ]
+  },
+  {
     id: "imports",
     title: "Imports",
     items: [
@@ -292,7 +330,7 @@ export default function FaqPage() {
           <span className={legalStyles.eyebrow}>Support</span>
           <h1 className={legalStyles.title}>Frequently Asked Questions</h1>
           <p className={legalStyles.description}>
-            Answers to common questions about importing contacts, finding emails, writing templates, connecting Gmail,
+            Answers to common questions about accounts and deletion, importing contacts, finding emails, connecting Gmail,
             launching sequences, and tracking outreach in Sendloom.
           </p>
 

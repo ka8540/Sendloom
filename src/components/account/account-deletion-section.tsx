@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { ArrowRight, BarChart3, Compass, Mail, Workflow, X } from "lucide-react";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { LocalDateTime } from "@/components/local-date-time";
@@ -109,6 +110,7 @@ export function AccountDeletionSection({ onKeepUsing }: { onKeepUsing: () => voi
             <div><Mail aria-hidden="true" /><span><strong>Gmail</strong><small>Send from connected Gmail accounts.</small></span></div>
           </div>
           <div className={styles.actions}><button type="button" className="button" onClick={onKeepUsing}>Keep using Sendloom</button><button ref={continueRef} type="button" className={styles.continue} onClick={() => { setError(null); setSelection(null); setChoiceOpen(true); }} disabled={!loaded}>Continue to deletion <ArrowRight aria-hidden="true" /></button></div>
+          <p className={styles.legalLinks}>How deleted account data is handled: <Link href="/privacy">Privacy Policy</Link> · <Link href="/terms">Terms of Service</Link></p>
         </div>
       )}
       {error && !choiceOpen && !choice ? <p className={styles.error} role="alert">{error}</p> : null}
@@ -130,7 +132,7 @@ export function AccountDeletionSection({ onKeepUsing }: { onKeepUsing: () => voi
           </div>
         </div>, document.body
       ) : null}
-      <AppConfirmDialog open={choice !== null} title={choice === "ACCOUNT_ONLY" ? "Delete your account now?" : "Request permanent deletion?"} description={choice === "ACCOUNT_ONLY" ? "Your account and sign-in access will be removed immediately, and you will be signed out. We will send a farewell email. Existing outreach records remain; sanitized audit and security history is retained. This cannot be undone." : "You are requesting deletion of your account and private outreach data. A Sendloom admin will review it before permanent removal. We will email you confirmation. Sanitized audit and security history remains."} confirmLabel={choice === "ACCOUNT_ONLY" ? "Delete account" : "Request deletion"} loadingLabel={choice === "ACCOUNT_ONLY" ? "Deleting…" : "Submitting…"} destructive loading={working} error={choice ? error : null} onConfirm={submit} onCancel={() => { if (!working) { setChoice(null); setError(null); requestAnimationFrame(() => continueRef.current?.focus()); } }} />
+      <AppConfirmDialog open={choice !== null} title={choice === "ACCOUNT_ONLY" ? "Delete your account now?" : "Request permanent deletion?"} description={choice === "ACCOUNT_ONLY" ? "Your account and sign-in access will be removed immediately, and you will be signed out. We'll try to send a farewell email. Existing outreach records remain; sanitized audit and security history is retained. This cannot be undone." : "You are requesting deletion of your account and private outreach data. A Sendloom admin will review it before permanent removal. We'll try to email you confirmation. Sanitized audit and security history remains."} confirmLabel={choice === "ACCOUNT_ONLY" ? "Delete account" : "Request deletion"} loadingLabel={choice === "ACCOUNT_ONLY" ? "Deleting…" : "Submitting…"} destructive loading={working} error={choice ? error : null} onConfirm={submit} onCancel={() => { if (!working) { setChoice(null); setError(null); requestAnimationFrame(() => continueRef.current?.focus()); } }} />
     </div>
   );
 }

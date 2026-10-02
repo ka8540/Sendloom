@@ -105,7 +105,7 @@ class FakeLegalNoticeStore implements LegalNoticeStore {
     const grouped = this.findOrCreateRelease(policy.releaseGroup);
     this.sequence += 1;
     const id = `notice-${this.sequence}`;
-    const createdAt = new Date(`2026-09-01T00:00:${String(this.sequence).padStart(2, "0")}Z`);
+    const createdAt = new Date(`2026-10-03T00:00:${String(this.sequence).padStart(2, "0")}Z`);
     this.histories.set(policy.id, [
       { id, version: policy.version, contentHash, status: LegalPolicyNoticeStatus.PENDING, createdAt },
       ...(this.histories.get(policy.id) ?? [])
@@ -378,12 +378,12 @@ class FakeLegalNoticeStore implements LegalNoticeStore {
   }
 }
 
-function futurePolicy(policy: LegalPolicy, releaseGroup: string, version = "2026-09-01"): LegalPolicy {
+function futurePolicy(policy: LegalPolicy, releaseGroup: string, version = "2026-10-03"): LegalPolicy {
   return {
     ...policy,
     version,
     releaseGroup,
-    lastUpdated: "September 1, 2026",
+    lastUpdated: "October 3, 2026",
     changeSummary: [`Updated ${policy.title}.`],
     sections: [
       ...policy.sections,
@@ -426,6 +426,31 @@ describe("legal policy release detection and grouping", () => {
     expect(mailer.send).not.toHaveBeenCalled();
   });
 
+  it("groups the actual account-deletion policy release against prior versions", async () => {
+    const store = new FakeLegalNoticeStore([{ id: "existing-user", email: "account@example.com" }]);
+    const priorHashes = {
+      terms: "f2464b731634b12ce6dcdc79d6d26133be7709f5cf31ceb036e3cead378a1999",
+      privacy: "9b51c8de4c92ad8b2dcc729d1c0f2a866547a11677f8b4fc5939f0180dd20610",
+      abuse: "d6be738343438cd62c528692c068913182c8dface24bceff1dcfeabc8654bc4b"
+    } as const;
+    for (const policy of LEGAL_POLICY_LIST) {
+      store.histories.set(policy.id, [{
+        id: `prior-${policy.id}`,
+        version: "2026-08-24",
+        contentHash: priorHashes[policy.id],
+        status: LegalPolicyNoticeStatus.COMPLETED,
+        createdAt: new Date("2026-08-24T00:00:00Z")
+      }]);
+    }
+    const mailer = acceptingMailer();
+    const result = await processLegalPolicyNotices({ store, policies: LEGAL_POLICY_LIST, mailer, auditEvent: noopAudit, runtime });
+    expect(result).toMatchObject({ noticesCreated: 3, releasesCreated: 1, recipientsSent: 1 });
+    expect(store.releases).toHaveLength(1);
+    expect(store.releases[0].releaseGroup).toBe("2026-10-02-account-deletion");
+    expect(mailer.send).toHaveBeenCalledTimes(1);
+    expect(mailer.send.mock.calls[0][0].policies.map((policy: { id: string }) => policy.id).sort()).toEqual(["abuse", "privacy", "terms"]);
+  });
+
   it("groups three changed policies into one release and one email per user", async () => {
     const store = new FakeLegalNoticeStore([
       { id: "password", email: "password@example.com", passwordHash: "hash" },
@@ -433,7 +458,7 @@ describe("legal policy release detection and grouping", () => {
     ]);
     await establishBaselines(store);
     const mailer = acceptingMailer();
-    const policies = LEGAL_POLICY_LIST.map((item) => futurePolicy(item, "2026-09-01-policy-refresh"));
+    const policies = LEGAL_POLICY_LIST.map((item) => futurePolicy(item, "2026-10-03-policy-refresh"));
     const result = await processLegalPolicyNotices({
       store,
       policies,
@@ -457,7 +482,7 @@ describe("legal policy release detection and grouping", () => {
     expect(mailer.send).toHaveBeenCalledTimes(2);
     for (const call of mailer.send.mock.calls) {
       expect(call[0].policies.map((policy: { id: string }) => policy.id).sort()).toEqual(["abuse", "privacy", "terms"]);
-      expect(call[0].releaseGroup).toBe("2026-09-01-policy-refresh");
+      expect(call[0].releaseGroup).toBe("2026-10-03-policy-refresh");
       expect(call[0].idempotencyKey).toMatch(/^legal-release-release-\d+-(password|google)$/);
     }
   });
@@ -524,7 +549,7 @@ describe("legal policy release detection and grouping", () => {
       code: "CONTENT_CHANGED_WITHOUT_VERSION_BUMP"
     });
     const noSummary: LegalPolicy = {
-      ...futurePolicy(baseline, "future", "2026-09-02"),
+      ...futurePolicy(baseline, "future", "2026-10-04"),
       changeSummary: []
     };
     expect(evaluatePolicyRelease(noSummary, computeLegalPolicyContentHash(noSummary), history)).toEqual({
@@ -586,7 +611,7 @@ describe("release recipient selection, idempotency, and retries", () => {
       { id: "u3", email: "three@example.com" }
     ]);
     await establishBaselines(store);
-    let currentTime = new Date("2026-09-01T12:00:00Z");
+    let currentTime = new Date("2026-10-03T12:00:00Z");
     const send = vi
       .fn()
       .mockResolvedValueOnce({ status: "accepted", providerMessageId: "message-one" })
@@ -605,7 +630,7 @@ describe("release recipient selection, idempotency, and retries", () => {
       batchSize: 3,
       maxPerRun: 10
     });
-    currentTime = new Date("2026-09-01T12:10:00Z");
+    currentTime = new Date("2026-10-03T12:10:00Z");
     const resumed = await processLegalPolicyNotices({
       store,
       policies,
@@ -690,7 +715,7 @@ describe("legacy August 23 transition", () => {
 
     expect(result).toMatchObject({ noticesCreated: 0, releasesCreated: 1, recipientsSent: 1, releasesCompleted: 1 });
     expect(store.releases).toHaveLength(1);
-    expect(store.releases[0].releaseGroup).toBe("2026-08-24-account-recovery-security");
+    expect(store.releases[0].releaseGroup).toBe("2026-10-02-account-deletion");
     expect(store.releases[0].notices).toHaveLength(3);
     expect(mailer.send).toHaveBeenCalledTimes(1);
     expect(mailer.send).toHaveBeenCalledWith(expect.objectContaining({ to: "new@example.com" }));

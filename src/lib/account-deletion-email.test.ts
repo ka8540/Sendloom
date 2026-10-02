@@ -14,4 +14,10 @@ describe("Sendloom deletion email content", () => {
     expect(message.html).toContain("The Sendloom Team");
     expect(message.html).not.toMatch(/passwordHash|oauthRefreshToken|sessionExpiresAt/);
   });
+
+  it("keeps return and pending-request copy consistent with account rules", () => {
+    expect(renderDeletionEmail("ACCOUNT_DELETED").text).toContain("no security or enforcement restriction applies");
+    expect(renderDeletionEmail("REQUEST_RECEIVED").text).toContain("cancel this request while it is still pending review");
+    expect(renderDeletionEmail("FULL_DELETION_COMPLETE").text).toContain("eligibility rules");
+  });
 });
