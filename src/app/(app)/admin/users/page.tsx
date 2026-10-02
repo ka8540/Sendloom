@@ -1,6 +1,6 @@
-import type { Route } from "next";
 import Link from "next/link";
 import { requireAdminUser } from "@/lib/auth";
+import { AdminUsersSearch } from "@/components/admin-v2/users-search";
 import {
   listUsersWorkspace,
   normalizeUserStatus,
@@ -10,7 +10,6 @@ import {
   AdminMetricStrip,
   AdminPagination,
   AdminPageHeader,
-  AdminSearchInput,
   AdminShell,
   AdminStatusBadge,
   AdminTable,
@@ -89,23 +88,12 @@ export default async function UsersPage({
           }),
         }))}
       />
-      <form method="get" action="/admin/users" className={styles.controlBar}>
-        <AdminSearchInput
-          value={q}
-          placeholder="Search email or exact user ID"
-          label="Search users"
-        />
-        {status !== "all" && (
-          <input type="hidden" name="status" value={status} />
-        )}
-        <button className="button secondary" type="submit">
-          Search
-        </button>
-        {q && <Link href={href({ q: "", page: "1" }) as Route}>Clear</Link>}
-        <span className={styles.muted}>
-          {data.count.toLocaleString()} users
+      <div className={styles.usersToolbar}>
+        <AdminUsersSearch query={q} status={status} />
+        <span className={styles.usersCount} aria-live="polite">
+          {data.count.toLocaleString()} {data.count === 1 ? "user" : "users"}
         </span>
-      </form>
+      </div>
       {data.users.length ? (
         <AdminTable
           headings={[

@@ -299,6 +299,29 @@
   margin-left: auto;
   font-size: 0.84rem;
 }
+.usersToolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.usersSearchForm {
+  flex: 0 1 27rem;
+  width: 100%;
+  min-width: min(100%, 15rem);
+}
+.usersSearchForm :global(.saved-templates__search) {
+  width: 100%;
+  min-height: 2.65rem;
+}
+.usersCount {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .searchField {
   display: flex;
   align-items: center;
