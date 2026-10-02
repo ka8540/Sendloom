@@ -1,0 +1,18 @@
+.section + .section{border-top:1px solid var(--line)}
+.trigger{display:flex;align-items:center;gap:1rem;width:100%;min-height:6rem;padding:1.05rem 1.35rem;border:0;background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer;transition:background-color .18s ease}
+.trigger:hover{background:var(--surface-hover)}
+.trigger:active{background:var(--surface-muted)}
+.trigger:focus-visible{position:relative;z-index:1;outline:2px solid var(--accent);outline-offset:-3px}
+.icon{display:grid;place-items:center;flex:none;width:2.65rem;height:2.65rem;border:1px solid var(--line);border-radius:12px;background:var(--surface-muted);color:var(--accent-strong)}
+.icon svg{width:1.15rem;height:1.15rem;stroke-width:1.9}
+.danger .icon{color:var(--error-toast-icon-color);background:var(--error-toast-icon-bg);border-color:color-mix(in srgb,var(--error-toast-icon-color) 18%,var(--line))}
+.copy{display:grid;gap:.23rem;min-width:0;flex:1}
+.title{font-size:1rem;font-weight:750;letter-spacing:-.015em}
+.description{color:var(--muted);font-size:.84rem;line-height:1.4;text-wrap:pretty}
+.meta{flex:none;color:var(--muted);font-size:.76rem;font-weight:650}
+.chevron{flex:none;width:1.05rem;height:1.05rem;color:var(--muted);transition:transform .2s ease}
+.chevronOpen{transform:rotate(180deg)}
+.body{border-top:1px solid var(--line);padding:1.35rem 1.5rem 1.65rem;background:color-mix(in srgb,var(--surface-muted) 44%,var(--surface))}
+.body[hidden]{display:none}
+@media(max-width:650px){.trigger{padding:1rem;min-height:5.7rem;gap:.7rem}.body{padding:1.1rem}.meta{display:none}.icon{width:2.35rem;height:2.35rem}}
+@media(prefers-reduced-motion:reduce){.trigger,.chevron{transition:none}}
