@@ -448,8 +448,9 @@ export type AdminIncidentFilter = {
 
 export const INCIDENT_PAGE_SIZE = 25;
 const INCIDENT_MAX_PAGE_SIZE = 50;
+const ADMIN_INCIDENT_PAGE_SIZE = 20;
 
-export async function listAdminIncidents(filter: AdminIncidentFilter, cursor?: string | null, limit = INCIDENT_PAGE_SIZE) {
+export async function listAdminIncidents(filter: AdminIncidentFilter, cursor?: string | null, limit = INCIDENT_PAGE_SIZE, requestedPage?: number) {
   const eventFilter: Prisma.AppErrorEventWhereInput = {};
   if (filter.feature) {
     eventFilter.feature = filter.feature;
@@ -469,23 +470,27 @@ export async function listAdminIncidents(filter: AdminIncidentFilter, cursor?: s
     ...(Object.keys(eventFilter).length ? { errorEvent: eventFilter } : {})
   };
 
-  const take = Math.min(Math.max(limit, 1), INCIDENT_MAX_PAGE_SIZE);
+  const totalCount = await prisma.incidentReport.count({ where });
+  const take = requestedPage === undefined ? Math.min(Math.max(limit, 1), INCIDENT_MAX_PAGE_SIZE) : ADMIN_INCIDENT_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(totalCount / take));
+  const pageNumber = requestedPage === undefined ? undefined : Math.max(1, Math.min(totalPages, requestedPage));
   const rows = await prisma.incidentReport.findMany({
     where,
     include: { errorEvent: true },
     orderBy: [{ lastSeenAt: "desc" }, { id: "desc" }],
-    take: take + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {})
+    take: pageNumber === undefined ? take + 1 : take,
+    ...(pageNumber !== undefined ? { skip: (pageNumber - 1) * take } : cursor ? { cursor: { id: cursor }, skip: 1 } : {})
   });
 
-  const hasMore = rows.length > take;
+  const hasMore = pageNumber === undefined ? rows.length > take : pageNumber < totalPages;
   const page = hasMore ? rows.slice(0, take) : rows;
-  const totalCount = await prisma.incidentReport.count({ where });
 
   return {
     items: page.map(toListItem),
-    nextCursor: hasMore ? page[page.length - 1].id : null,
-    totalCount
+    nextCursor: hasMore && page.length ? page[page.length - 1].id : null,
+    totalCount,
+    page: pageNumber ?? 1,
+    pageSize: take
   };
 }
 

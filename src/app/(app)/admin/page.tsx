@@ -1,9 +1,14 @@
 import type { Route } from "next";
 import Link from "next/link";
+import { CheckCircle2 } from "lucide-react";
 import { requireAdminUser } from "@/lib/auth";
 import { getAdminOverview } from "@/services/admin-v2/overview";
+import { AdminTimeChart } from "@/components/admin-v2/admin-charts";
 import {
-  AdminEmptyState,
+  formatAdminInstant,
+  formatAdminRelative,
+} from "@/components/admin-v2/format";
+import {
   AdminMetricStrip,
   AdminPageHeader,
   AdminSection,
@@ -19,7 +24,7 @@ export default async function AdminOverviewPage() {
     ["Database", data.health.checks.database],
     ["Redis", data.health.checks.redis],
     ["Storage", data.health.checks.storage],
-    ["Google OAuth", data.health.checks.googleOAuth],
+    ["Google", data.health.checks.googleOAuth],
     ["Mail", data.health.checks.mailProvider],
     ["Cron", data.health.checks.cron],
   ] as const;
@@ -50,8 +55,16 @@ export default async function AdminOverviewPage() {
       />
       <AdminMetricStrip
         items={[
-          { label: "Total users", value: data.metrics.totalUsers },
-          { label: "Active users · 24h", value: data.metrics.activeUsers },
+          {
+            label: "Total accounts",
+            value: data.metrics.totalUsers,
+            note: "Includes admins",
+          },
+          {
+            label: "Product users active · 24h",
+            value: data.metrics.activeUsers,
+            note: "Latest activity",
+          },
           {
             label: "Confirmed sends · 24h",
             value: data.metrics.confirmedSends,
@@ -65,19 +78,13 @@ export default async function AdminOverviewPage() {
       />
       <AdminSection
         title="Platform health"
-        description={`Last checked ${new Date(data.health.timestamp).toLocaleString()}`}
-        action={<Link href="/admin/operations">Open platform →</Link>}
+        description={`Checked ${formatAdminInstant(data.health.timestamp)}`}
+        action={<Link href="/admin/operations">Open operations →</Link>}
       >
-        <div
-          className={styles.panel}
-          style={{ display: "flex", flexWrap: "wrap", gap: ".65rem 1.25rem" }}
-        >
+        <div className={`${styles.panel} ${styles.healthGrid}`}>
           {healthChecks.map(([name, check]) => (
-            <div
-              key={name}
-              style={{ display: "flex", alignItems: "center", gap: ".45rem" }}
-            >
-              <span>{name}</span>
+            <div className={styles.healthCell} key={name}>
+              <strong>{name}</strong>
               <AdminStatusBadge
                 status={check.status}
                 tone={
@@ -92,15 +99,14 @@ export default async function AdminOverviewPage() {
           ))}
         </div>
       </AdminSection>
-      <div className={styles.split}>
+      <div className={styles.twoColumn}>
         <AdminSection
           title="Needs attention"
-          description="Stored issues and current service checks"
           action={<Link href="/admin/operations">All operations →</Link>}
         >
           {data.attention.length ? (
             <ul className={`${styles.panel} ${styles.list}`}>
-              {data.attention.map((item) => (
+              {data.attention.slice(0, 6).map((item) => (
                 <li key={item.id}>
                   <Link href={item.href as Route}>
                     <AdminStatusBadge
@@ -114,9 +120,10 @@ export default async function AdminOverviewPage() {
               ))}
             </ul>
           ) : (
-            <AdminEmptyState>
-              No active issues in the current checks.
-            </AdminEmptyState>
+            <div className={styles.successRow}>
+              <CheckCircle2 size={17} aria-hidden="true" />
+              No issues need attention
+            </div>
           )}
         </AdminSection>
         <AdminSection
@@ -124,51 +131,46 @@ export default async function AdminOverviewPage() {
           description="Current operational states"
         >
           <div className={styles.panel}>
-            <ul className={styles.list}>
+            <dl className={styles.dataList}>
               {data.running.map((item) => (
-                <li
-                  key={item.label}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: "1rem",
-                  }}
-                >
-                  <span>{item.label}</span>
-                  <strong>{item.value.toLocaleString()}</strong>
-                </li>
+                <div className={styles.definitionRow} key={item.label}>
+                  <dt>{item.label}</dt>
+                  <dd>{item.value.toLocaleString()}</dd>
+                </div>
               ))}
-            </ul>
+            </dl>
           </div>
         </AdminSection>
       </div>
-      <div className={styles.split}>
-        <AdminSection
-          title="Product pulse"
-          description="New users and confirmed sends by UTC day, last seven days"
-          action={<Link href="/admin/analytics">Full analytics →</Link>}
-        >
-          <div className={styles.tableScroll}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Day</th>
-                  <th>New users</th>
-                  <th>Confirmed sends</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.pulse.map((day) => (
-                  <tr key={day.date}>
-                    <td>{day.date}</td>
-                    <td>{day.users}</td>
-                    <td>{day.sends}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </AdminSection>
+      <AdminSection
+        title="Product pulse"
+        description="Confirmed sends, sequence launches, and Discover searches by UTC day"
+        action={<Link href="/admin/analytics">Full analytics →</Link>}
+      >
+        <div className={styles.panel}>
+          <AdminTimeChart
+            data={data.pulse}
+            series={[
+              {
+                key: "sends",
+                name: "Confirmed sends",
+                color: "var(--analysis-green)",
+              },
+              {
+                key: "runs",
+                name: "Sequence runs",
+                color: "var(--analysis-blue)",
+              },
+              {
+                key: "searches",
+                name: "Discover searches",
+                color: "var(--analysis-purple)",
+              },
+            ]}
+          />
+        </div>
+      </AdminSection>
+      <div className={styles.twoColumn}>
         <AdminSection
           title="Recent admin activity"
           action={<Link href="/admin/audit">Audit & Security →</Link>}
@@ -176,16 +178,35 @@ export default async function AdminOverviewPage() {
           {data.recentAdminEvents.length ? (
             <ul className={`${styles.panel} ${styles.list}`}>
               {data.recentAdminEvents.map((event) => (
-                <li key={event.id}>
+                <li key={event.id} className={styles.activityRow}>
                   <strong>{event.message || event.action}</strong>
-                  <div className={styles.muted}>
-                    {new Date(event.createdAt).toLocaleString()}
-                  </div>
+                  <small title={formatAdminInstant(event.createdAt)}>
+                    {formatAdminRelative(event.createdAt)}
+                  </small>
                 </li>
               ))}
             </ul>
           ) : (
-            <AdminEmptyState>No admin events recorded yet.</AdminEmptyState>
+            <p className={styles.compactEmpty}>No admin events recorded yet.</p>
+          )}
+        </AdminSection>
+        <AdminSection
+          title="Recently joined accounts"
+          action={<Link href="/admin/users">All users →</Link>}
+        >
+          {data.recentAccounts.length ? (
+            <ul className={`${styles.panel} ${styles.list}`}>
+              {data.recentAccounts.map((user) => (
+                <li key={user.id} className={styles.activityRow}>
+                  <Link href={`/admin/users/${user.id}`}>{user.email}</Link>
+                  <small title={formatAdminInstant(user.createdAt)}>
+                    {formatAdminRelative(user.createdAt)}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={styles.compactEmpty}>No accounts yet.</p>
           )}
         </AdminSection>
       </div>

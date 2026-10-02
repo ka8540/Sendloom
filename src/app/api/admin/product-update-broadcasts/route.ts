@@ -11,7 +11,9 @@ export async function GET(request: Request) {
   if ("response" in auth) return auth.response;
   const limit = await rateLimit({ key: `admin:product-updates:list:${auth.user.id}`, limit: 120, windowSeconds: 60 });
   if (!limit.allowed) return createRateLimitResponse(limit.retryAfterSeconds);
-  return NextResponse.json(await listProductUpdateBroadcasts());
+  const page = Number(new URL(request.url).searchParams.get("page")) || 1;
+  const activePage = Number(new URL(request.url).searchParams.get("activePage")) || 1;
+  return NextResponse.json(await listProductUpdateBroadcasts(page, activePage));
 }
 
 export async function POST(request: Request) {

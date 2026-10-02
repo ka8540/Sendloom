@@ -13,7 +13,9 @@ export async function GET(request: Request) {
   const limit = await rateLimit({ key: `admin:system-notices:list:${auth.user.id}`, limit: 120, windowSeconds: 60 });
   if (!limit.allowed) return createRateLimitResponse(limit.retryAfterSeconds);
 
-  return NextResponse.json(await listSystemNotices());
+  const page = Number(new URL(request.url).searchParams.get("page")) || 1;
+  const activePage = Number(new URL(request.url).searchParams.get("activePage")) || 1;
+  return NextResponse.json(await listSystemNotices(page, activePage));
 }
 
 export async function POST(request: Request) {

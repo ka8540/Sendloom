@@ -2,8 +2,9 @@ import { getSystemHealth } from "@/lib/system-health";
 import {
   AdminSection,
   AdminStatusBadge,
-  AdminTable,
+  adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
+import { formatAdminInstant } from "@/components/admin-v2/format";
 import { AdminHealthRefresh } from "@/components/admin-v2/health-refresh";
 export default async function PlatformPage() {
   const health = await getSystemHealth();
@@ -15,7 +16,7 @@ export default async function PlatformPage() {
     <>
       <AdminSection
         title="Platform status"
-        description={`Checked ${new Date(health.timestamp).toLocaleString()}`}
+        description={`Checked ${formatAdminInstant(health.timestamp)}`}
         action={<AdminHealthRefresh />}
       >
         <AdminStatusBadge
@@ -28,11 +29,11 @@ export default async function PlatformPage() {
                 : "warning"
           }
         />
-        <AdminTable headings={["Service", "Status", "Details"]}>
+        <div className={styles.healthGrid}>
           {rows.map((row) => (
-            <tr key={row.name}>
-              <td>{row.name}</td>
-              <td>
+            <article className={styles.panel} key={row.name}>
+              <div className={styles.activityRow}>
+                <strong>{row.name}</strong>
                 <AdminStatusBadge
                   status={row.status}
                   tone={
@@ -43,11 +44,11 @@ export default async function PlatformPage() {
                         : "warning"
                   }
                 />
-              </td>
-              <td>{row.message}</td>
-            </tr>
+              </div>
+              <p className={styles.muted}>{row.message}</p>
+            </article>
           ))}
-        </AdminTable>
+        </div>
       </AdminSection>
       <p className="muted">
         Configuration checks show presence only. Processor runs are not inferred

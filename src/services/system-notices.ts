@@ -6,6 +6,7 @@ import {
 
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
+import { normalizeAdminPage } from "@/services/admin-v2/pagination";
 import {
   SystemNoticeActionError,
   SystemNoticeValidationError,
@@ -93,30 +94,40 @@ async function recipientCountsByNotice(noticeIds: string[]) {
   return counts;
 }
 
-export async function listSystemNotices() {
-  const [notices, accountRecipientCount] = await Promise.all([
+export async function listSystemNotices(requestedPage = 1, requestedActivePage = 1) {
+  const historyWhere: Prisma.SystemNoticeWhereInput = { status: { notIn: ["SCHEDULED", "SENDING"] } };
+  const [historyCount, accountRecipientCount, statusCounts, attentionCount] = await Promise.all([
+    prisma.systemNotice.count({ where: historyWhere }),
+    prisma.user.count(),
+    prisma.systemNotice.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.systemNotice.count({ where: { OR: [{ status: "FAILED" }, { recipients: { some: { status: { in: ["PERMANENT_FAILURE", "RETRY"] } } } }] } })
+  ]);
+  const page = normalizeAdminPage(requestedPage, historyCount, 20);
+  const activeCount = statusCounts.filter((row) => row.status === "SCHEDULED" || row.status === "SENDING").reduce((sum, row) => sum + row._count._all, 0);
+  const activePage = normalizeAdminPage(requestedActivePage, activeCount, 20);
+  const [active, history] = await Promise.all([
     prisma.systemNotice.findMany({
       include: noticeInclude,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 200
+      where: { status: { in: ["SCHEDULED", "SENDING"] } },
+      skip: (activePage - 1) * 20,
+      take: 20
     }),
-    prisma.user.count()
+    prisma.systemNotice.findMany({ include: noticeInclude, where: historyWhere, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * 20, take: 20 })
   ]);
+  const notices = [...active, ...history];
   const counts = await recipientCountsByNotice(notices.map((notice) => notice.id));
   const items = notices.map((notice) => mapNotice(notice, counts.get(notice.id) ?? { ...EMPTY_RECIPIENT_COUNTS }));
   return {
     notices: items,
     accountRecipientCount,
+    pagination: { page, pageSize: 20, count: historyCount },
+    activePagination: { page: activePage, pageSize: 20, count: activeCount },
     summary: {
-      scheduled: items.filter((notice) => notice.status === SystemNoticeStatus.SCHEDULED).length,
-      sending: items.filter((notice) => notice.status === SystemNoticeStatus.SENDING).length,
-      completed: items.filter((notice) => notice.status === SystemNoticeStatus.COMPLETED).length,
-      attention: items.filter(
-        (notice) =>
-          notice.status === SystemNoticeStatus.FAILED ||
-          notice.delivery.permanentFailures > 0 ||
-          notice.delivery.retryable > 0
-      ).length
+      scheduled: statusCounts.find((row) => row.status === SystemNoticeStatus.SCHEDULED)?._count._all ?? 0,
+      sending: statusCounts.find((row) => row.status === SystemNoticeStatus.SENDING)?._count._all ?? 0,
+      completed: statusCounts.find((row) => row.status === SystemNoticeStatus.COMPLETED)?._count._all ?? 0,
+      attention: attentionCount
     }
   };
 }

@@ -9,6 +9,7 @@ import { INCIDENT_STATUSES, listAdminIncidents } from "@/services/incident-repor
 
 const querySchema = z.object({
   cursor: z.string().min(1).max(64).optional(),
+  page: z.coerce.number().int().min(1).max(10000).optional(),
   reportId: z.string().min(1).max(40).optional(),
   reporter: z.string().min(1).max(24).optional(),
   feature: z.string().min(1).max(120).optional(),
@@ -33,6 +34,7 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const parsed = querySchema.safeParse({
     cursor: searchParams.get("cursor") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
     reportId: searchParams.get("reportId") ?? undefined,
     reporter: searchParams.get("reporter") ?? undefined,
     feature: searchParams.get("feature") ?? undefined,
@@ -58,7 +60,9 @@ export async function GET(request: Request) {
       from: parsed.data.from ?? null,
       to: parsed.data.to ?? null
     },
-    parsed.data.cursor ?? null
+    parsed.data.cursor ?? null,
+    undefined,
+    parsed.data.page
   );
 
   return NextResponse.json(result);

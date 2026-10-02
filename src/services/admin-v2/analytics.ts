@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { buildUtcSeries, type DailyCount } from "./daily-series";
 
 export type AdminRange = 7 | 30 | 90;
 export function normalizeAdminRange(value: string | undefined): AdminRange {
@@ -9,7 +10,14 @@ export function safeRate(numerator: number, denominator: number) {
 }
 
 export async function getAdminAnalytics(days: AdminRange) {
-  const since = new Date(Date.now() - days * 86_400_000);
+  const now = new Date();
+  const since = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - days + 1,
+    ),
+  );
   const [
     totalUsers,
     newUsers,
@@ -37,6 +45,14 @@ export async function getAdminAnalytics(days: AdminRange) {
     templateUsers,
     campaignUsers,
     newUserTrend,
+    lastSeenTrend,
+    runTrend,
+    sendTrend,
+    replyTrend,
+    searchTrend,
+    expansionTrend,
+    reusedSearches,
+    providerSearches,
   ] = await Promise.all([
     prisma.user.count({ where: { isAdmin: false } }),
     prisma.user.count({ where: { isAdmin: false, createdAt: { gte: since } } }),
@@ -161,31 +177,62 @@ export async function getAdminAnalytics(days: AdminRange) {
     prisma.$queryRaw<
       Array<{ day: Date; count: number }>
     >`SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "User" WHERE "isAdmin" = false AND "createdAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', "lastSeenAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "User" WHERE "isAdmin" = false AND "lastSeenAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', r."createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "CampaignRun" r JOIN "Campaign" c ON c.id = r."campaignId" JOIN "User" u ON u.id = c."userId" WHERE u."isAdmin" = false AND r."createdAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', l."sentAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "SendLedger" l JOIN "User" u ON u.id = l."userId" WHERE u."isAdmin" = false AND l."sentAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', r."receivedAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "InboundReply" r JOIN "RecipientJob" j ON j.id = r."recipientJobId" JOIN "CampaignRun" cr ON cr.id = j."campaignRunId" JOIN "Campaign" c ON c.id = cr."campaignId" JOIN "User" u ON u.id = c."userId" WHERE u."isAdmin" = false AND r."receivedAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', s."createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "ProspectSearch" s JOIN "User" u ON u.id = s."userId" WHERE u."isAdmin" = false AND s."createdAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', e."createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "DiscoverSearchExpansion" e JOIN "ProspectSearch" s ON s.id = e."searchId" JOIN "User" u ON u.id = s."userId" WHERE u."isAdmin" = false AND e."createdAt" >= ${since} GROUP BY 1 ORDER BY 1`,
+    prisma.prospectSearch.count({
+      where: {
+        createdAt: { gte: since },
+        user: { isAdmin: false },
+        resultSource: "CACHE",
+      },
+    }),
+    prisma.prospectSearch.count({
+      where: {
+        createdAt: { gte: since },
+        user: { isAdmin: false },
+        resultSource: "PROVIDER",
+      },
+    }),
   ]);
-  const trend = Array.from({ length: days }, (_, offset) => {
-    const now = new Date();
-    const day = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate() - days + offset + 1,
-      ),
-    )
-      .toISOString()
-      .slice(0, 10);
-    return {
-      day,
-      count:
-        newUserTrend.find((row) => row.day.toISOString().slice(0, 10) === day)
-          ?.count ?? 0,
-    };
-  });
+  const trend = buildUtcSeries(
+    days,
+    { newUsers: newUserTrend, lastSeen: lastSeenTrend },
+    now,
+  );
+  const outreachTrend = buildUtcSeries(
+    days,
+    { sends: sendTrend, runs: runTrend, replies: replyTrend },
+    now,
+  );
+  const discoverTrend = buildUtcSeries(
+    days,
+    { searches: searchTrend, expansions: expansionTrend },
+    now,
+  );
   return {
     days,
     totalUsers,
     newUsers,
     activeUsers,
     trend,
+    outreachTrend,
+    discoverTrend,
     funnel: [
       { label: "Signed up", value: totalUsers },
       { label: "Completed eligibility", value: eligibleUsers },
@@ -214,6 +261,8 @@ export async function getAdminAnalytics(days: AdminRange) {
       expansions,
       failedSearches,
       providerBatches,
+      reusedSearches,
+      providerSearches,
     },
   };
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getSystemHealth, type SystemHealthReport } from "@/lib/system-health";
+import { buildUtcSeries, type DailyCount } from "./daily-series";
 
 export type AttentionItem = {
   id: string;
@@ -78,6 +79,7 @@ export async function getAdminOverview() {
     activeUsers,
     confirmedSends,
     incidents,
+    attentionIncidentCount,
     openIncidents,
     failedRuns,
     failedNotices,
@@ -88,6 +90,9 @@ export async function getAdminOverview() {
     recentAdminEvents,
     newUsers,
     recentSends,
+    recentRuns,
+    recentSearches,
+    recentAccounts,
   ] = await Promise.all([
     getSystemHealth(),
     prisma.user.count(),
@@ -103,6 +108,12 @@ export async function getAdminOverview() {
       orderBy: { lastSeenAt: "desc" },
       take: 4,
       select: { publicReportId: true, severity: true, lastSeenAt: true },
+    }),
+    prisma.incidentReport.count({
+      where: {
+        status: { in: ["NEW", "INVESTIGATING"] },
+        severity: { in: ["HIGH", "CRITICAL"] },
+      },
     }),
     prisma.incidentReport.count({
       where: { status: { in: ["NEW", "INVESTIGATING"] } },
@@ -145,6 +156,17 @@ export async function getAdminOverview() {
     prisma.$queryRaw<
       Array<{ day: Date; count: number }>
     >`SELECT date_trunc('day', "sentAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "SendLedger" WHERE "sentAt" >= ${weekAgo} GROUP BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "CampaignRun" WHERE "createdAt" >= ${weekAgo} GROUP BY 1`,
+    prisma.$queryRaw<
+      DailyCount[]
+    >`SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC') AS day, COUNT(*)::int AS count FROM "ProspectSearch" WHERE "createdAt" >= ${weekAgo} GROUP BY 1`,
+    prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      select: { id: true, email: true, createdAt: true, lastSeenAt: true },
+    }),
   ]);
   const attention = deriveAttention({
     health,
@@ -153,38 +175,37 @@ export async function getAdminOverview() {
     failedNotices,
     failedUpdates,
   });
+  const unhealthyChecks = Object.values(health.checks).filter(
+    (check) => check.status === "down" || check.status === "missing",
+  ).length;
   const runCount = (status: string) =>
     runStates.find((row) => row.status === status)?._count._all ?? 0;
   const noticeCount = (status: string) =>
     noticeStates.find((row) => row.status === status)?._count._all ?? 0;
   const updateCount = (status: string) =>
     updateStates.find((row) => row.status === status)?._count._all ?? 0;
-  const pulse = Array.from({ length: 7 }, (_, offset) => {
-    const date = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate() - 6 + offset,
-      ),
-    );
-    const key = date.toISOString().slice(0, 10);
-    return {
-      date: key,
-      users:
-        newUsers.find((row) => row.day.toISOString().slice(0, 10) === key)
-          ?.count ?? 0,
-      sends:
-        recentSends.find((row) => row.day.toISOString().slice(0, 10) === key)
-          ?.count ?? 0,
-    };
-  });
+  const pulse = buildUtcSeries(
+    7,
+    {
+      users: newUsers,
+      sends: recentSends,
+      runs: recentRuns,
+      searches: recentSearches,
+    },
+    now,
+  );
   return {
     health,
     metrics: {
       totalUsers,
       activeUsers,
       confirmedSends,
-      needsAttention: attention.length,
+      needsAttention:
+        unhealthyChecks +
+        attentionIncidentCount +
+        Number(failedRuns > 0) +
+        Number(failedNotices > 0) +
+        Number(failedUpdates > 0),
     },
     attention,
     pulse,
@@ -208,6 +229,12 @@ export async function getAdminOverview() {
     recentAdminEvents: recentAdminEvents.map((event) => ({
       ...event,
       createdAt: event.createdAt.toISOString(),
+    })),
+    recentAccounts: recentAccounts.map((user) => ({
+      id: user.id,
+      email: user.email,
+      createdAt: user.createdAt.toISOString(),
+      lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
     })),
   };
 }

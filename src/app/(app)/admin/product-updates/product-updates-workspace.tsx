@@ -22,6 +22,7 @@ import {
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
+import { AdminClientPagination } from "@/components/admin-v2/client-pagination";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 
 import styles from "../system-notices/system-notices.module.css";
@@ -64,6 +65,8 @@ type Broadcast = {
 
 type ListResponse = {
   broadcasts: Broadcast[];
+  pagination: { page: number; pageSize: number; count: number };
+  activePagination: { page: number; pageSize: number; count: number };
   accountRecipientCount: number;
   summary: { scheduled: number; sending: number; completed: number; attention: number };
 };
@@ -209,7 +212,9 @@ function jsonRequest(method: "POST" | "PATCH", body?: unknown): RequestInit {
   };
 }
 
-export function ProductUpdatesWorkspace() {
+export function ProductUpdatesWorkspace({ initialPage = 1, initialActivePage = 1 }: { initialPage?: number; initialActivePage?: number }) {
+  const [page, setPage] = useState(Math.max(1, Math.floor(initialPage) || 1));
+  const [activePage, setActivePage] = useState(Math.max(1, Math.floor(initialActivePage) || 1));
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -231,8 +236,10 @@ export function ProductUpdatesWorkspace() {
     quiet ? setRefreshing(true) : setLoading(true);
     setPageError(null);
     try {
-      const next = await fetchJson<ListResponse>("/api/admin/product-update-broadcasts");
+      const next = await fetchJson<ListResponse>(`/api/admin/product-update-broadcasts?page=${page}&activePage=${activePage}`);
       setData(next);
+      if (next.pagination.page !== page) setPage(next.pagination.page);
+      if (next.activePagination.page !== activePage) setActivePage(next.activePagination.page);
       setSelected((current) => next.broadcasts.find((broadcast) => broadcast.id === current?.id) ?? current);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "Could not load product updates.");
@@ -240,6 +247,30 @@ export function ProductUpdatesWorkspace() {
       setLoading(false);
       setRefreshing(false);
     }
+  }, [page, activePage]);
+
+  function changeHistoryPage(nextPage: number) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", String(nextPage));
+    window.history.pushState(null, "", url);
+    setPage(nextPage);
+  }
+
+  function changeActivePage(nextPage: number) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("activePage", String(nextPage));
+    window.history.pushState(null, "", url);
+    setActivePage(nextPage);
+  }
+
+  useEffect(() => {
+    const onPopState = () => {
+      const params = new URL(window.location.href).searchParams;
+      setPage(Math.max(1, Number(params.get("page")) || 1));
+      setActivePage(Math.max(1, Number(params.get("activePage")) || 1));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
@@ -452,6 +483,7 @@ export function ProductUpdatesWorkspace() {
         ) : (
           <EmptyState icon={CalendarClock} title="No scheduled updates" body="Scheduled and actively sending announcements will appear here." />
         )}
+        {data?.activePagination && <AdminClientPagination {...data.activePagination} onPageChange={changeActivePage} />}
       </section>
 
       <section className={`${styles.sectionCard} card`}>
@@ -464,6 +496,7 @@ export function ProductUpdatesWorkspace() {
         ) : (
           <EmptyState icon={MailCheck} title="No product updates yet" body="Drafts, completed deliveries, cancellations, and failures will appear here." />
         )}
+        {data?.pagination && <AdminClientPagination {...data.pagination} onPageChange={changeHistoryPage} />}
       </section>
 
       {composerOpen ? (

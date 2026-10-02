@@ -1,14 +1,27 @@
 import Link from "next/link";
 import { getSendingOperations } from "@/services/admin-v2/operations";
 import {
+  AdminRankedBars,
+  AdminTimeChart,
+} from "@/components/admin-v2/admin-charts";
+import { formatAdminInstant } from "@/components/admin-v2/format";
+import {
   AdminEmptyState,
   AdminMetricStrip,
+  AdminPagination,
   AdminSection,
   AdminStatusBadge,
   AdminTable,
+  adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
-export default async function SendingPage() {
-  const data = await getSendingOperations();
+export default async function SendingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const data = await getSendingOperations(
+    Number((await searchParams).page) || 1,
+  );
   const state = (s: string) =>
     data.states.find((row) => row.status === s)?.count ?? 0;
   return (
@@ -29,43 +42,66 @@ export default async function SendingPage() {
         ]}
       />
       <AdminSection
-        title="Run states"
-        description="Current sequence execution state"
+        title="Sending activity"
+        description="Confirmed sends and newly created sequence runs by UTC day, last 7 days"
       >
-        <AdminTable headings={["State", "Runs"]}>
-          {data.states.map((row) => (
-            <tr key={row.status}>
-              <td>
-                <AdminStatusBadge
-                  status={row.status}
-                  tone={
-                    row.status === "FAILED"
-                      ? "danger"
-                      : row.status === "RUNNING"
-                        ? "healthy"
-                        : "neutral"
-                  }
-                />
-              </td>
-              <td>{row.count}</td>
-            </tr>
-          ))}
-        </AdminTable>
+        <div className={styles.panel}>
+          <AdminTimeChart
+            data={data.trend}
+            series={[
+              {
+                key: "sends",
+                name: "Confirmed sends",
+                color: "var(--analysis-green)",
+              },
+              {
+                key: "runs",
+                name: "Sequence runs",
+                color: "var(--analysis-blue)",
+              },
+            ]}
+          />
+        </div>
       </AdminSection>
-      <AdminSection title="Sender and recipient signals">
-        <AdminMetricStrip
-          items={[
-            { label: "Connected senders", value: data.connectedSenders },
-            {
-              label: "Sender connections requiring review",
-              value: data.senderIssues,
-              tone: data.senderIssues ? "warning" : undefined,
-            },
-            { label: "Skipped recipients · 24h", value: data.skippedJobs },
-            { label: "Paused runs", value: state("PAUSED") },
-          ]}
-        />
-      </AdminSection>
+      <div className={styles.twoColumn}>
+        <AdminSection
+          title="Run states"
+          description="Current sequence execution state"
+        >
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Runs"
+              items={data.states.map((row) => ({
+                name: row.status.replaceAll("_", " "),
+                value: row.count,
+              }))}
+            />
+          </div>
+        </AdminSection>
+        <AdminSection
+          title="Sender health"
+          description="Connected and review-required sender profiles"
+        >
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Sender profiles"
+              items={[
+                { name: "Connected", value: data.connectedSenders },
+                { name: "Review", value: data.senderIssues },
+              ]}
+            />
+            <div className={styles.inlineStats}>
+              <span>
+                Skipped recipients · 24h{" "}
+                <strong>{data.skippedJobs.toLocaleString()}</strong>
+              </span>
+              <span>
+                Paused runs <strong>{state("PAUSED").toLocaleString()}</strong>
+              </span>
+            </div>
+          </div>
+        </AdminSection>
+      </div>
       <AdminSection
         title="Recent failed runs"
         description="No recipient content is shown"
@@ -87,7 +123,7 @@ export default async function SendingPage() {
                   )}
                 </td>
                 <td>{run.failedCount}</td>
-                <td>{new Date(run.updatedAt).toLocaleString()}</td>
+                <td>{formatAdminInstant(run.updatedAt)}</td>
               </tr>
             ))}
           </AdminTable>
@@ -95,6 +131,10 @@ export default async function SendingPage() {
           <AdminEmptyState>No failed runs recorded.</AdminEmptyState>
         )}
       </AdminSection>
+      <AdminPagination
+        {...data.failurePagination}
+        href={(page) => `/admin/operations/sending?page=${page}`}
+      />
     </>
   );
 }

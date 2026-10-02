@@ -6,14 +6,18 @@ import {
   safeRate,
 } from "@/services/admin-v2/analytics";
 import {
+  AdminTimeChart,
+  AdminRankedBars,
+} from "@/components/admin-v2/admin-charts";
+import {
   AdminMetricStrip,
   AdminPageHeader,
   AdminSection,
   AdminShell,
   AdminTabs,
-  AdminTable,
   adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
+
 export default async function AdminAnalyticsPage({
   searchParams,
 }: {
@@ -26,7 +30,7 @@ export default async function AdminAnalyticsPage({
     <AdminShell>
       <AdminPageHeader
         title="Analytics"
-        description="How Sendloom is being adopted and used across accounts."
+        description="Understand growth, activation, product adoption, and platform usage."
       />
       <AdminTabs
         active={`/admin/analytics?range=${days}`}
@@ -37,110 +41,194 @@ export default async function AdminAnalyticsPage({
       />
       <AdminMetricStrip
         items={[
-          { label: "Total users", value: data.totalUsers },
+          {
+            label: "Product users",
+            value: data.totalUsers,
+            note: "Non-admin accounts",
+          },
           { label: `New users · ${days}d`, value: data.newUsers },
-          { label: `Active users · ${days}d`, value: data.activeUsers },
-          { label: "Confirmed sends", value: data.outreach.sends },
+          {
+            label: `Last seen · ${days}d`,
+            value: data.activeUsers,
+            note: "Non-admin accounts",
+          },
+          { label: `Confirmed sends · ${days}d`, value: data.outreach.sends },
         ]}
       />
       <AdminSection
-        title="New users over time"
-        description="UTC signup dates for non-admin accounts"
+        title="User growth"
+        description="New accounts and accounts whose latest activity falls on each UTC day"
       >
         <div className={styles.panel}>
-          <div
-            className={styles.sparkline}
-            role="img"
-            aria-label={`New users by day over the last ${days} days`}
-          >
-            {data.trend.map((row) => (
-              <span
-                key={row.day}
-                title={`${row.day}: ${row.count} new users`}
-                style={{
-                  height: `${Math.max(3, (row.count / Math.max(1, ...data.trend.map((item) => item.count))) * 100)}%`,
-                }}
-              />
-            ))}
-          </div>
-          <p className={styles.muted}>
-            {data.trend[0]?.day} → {data.trend.at(-1)?.day}
-          </p>
+          <AdminTimeChart
+            data={data.trend}
+            series={[
+              {
+                key: "newUsers",
+                name: "New users",
+                color: "var(--analysis-green)",
+              },
+              {
+                key: "lastSeen",
+                name: "Last seen",
+                color: "var(--analysis-blue)",
+              },
+            ]}
+          />
         </div>
       </AdminSection>
-      <div className={styles.split}>
+      <div className={styles.twoColumn}>
         <AdminSection
           title="Activation funnel"
-          description="Current persisted milestones for non-admin accounts"
+          description="Persisted milestones measured independently across product users; each bar is a share of all product users"
         >
-          <AdminTable headings={["Stage", "Accounts", "Of signups"]}>
-            {data.funnel.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td>{row.value.toLocaleString()}</td>
-                <td>
-                  {safeRate(row.value, data.totalUsers) === null
-                    ? "—"
-                    : `${safeRate(row.value, data.totalUsers)}%`}
-                </td>
-              </tr>
-            ))}
-          </AdminTable>
+          <div className={`${styles.panel} ${styles.progressList}`}>
+            {data.funnel.map((row) => {
+              const rate = safeRate(row.value, data.totalUsers);
+              return (
+                <div className={styles.progressItem} key={row.label}>
+                  <div className={styles.progressMeta}>
+                    <strong>{row.label}</strong>
+                    <span>
+                      {row.value.toLocaleString()} ·{" "}
+                      {rate === null ? "—" : `${rate}%`}
+                    </span>
+                  </div>
+                  <div
+                    className={styles.progressTrack}
+                    role="img"
+                    aria-label={`${row.label}: ${row.value} accounts, ${rate ?? 0}% of product users`}
+                  >
+                    <span
+                      className={styles.progressFill}
+                      style={{ width: `${rate ?? 0}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </AdminSection>
         <AdminSection
           title="Feature adoption"
-          description={`Recorded activity over ${days} days`}
+          description={`Unique product users over ${days} days; usage totals shown below`}
         >
-          <AdminTable headings={["Feature", "Unique users", "Usage"]}>
-            {data.adoption.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td>{row.users.toLocaleString()}</td>
-                <td>{row.value.toLocaleString()}</td>
-              </tr>
-            ))}
-          </AdminTable>
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Unique users"
+              items={data.adoption.map((row) => ({
+                name: row.label.replace(" searches", "").replace(" runs", ""),
+                value: row.users,
+              }))}
+            />
+            <dl className={styles.dataList}>
+              {data.adoption.map((row) => (
+                <div key={row.label} className={styles.definitionRow}>
+                  <dt>{row.label}</dt>
+                  <dd>
+                    {row.users.toLocaleString()} users ·{" "}
+                    {row.value.toLocaleString()} events
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </AdminSection>
       </div>
-      <div className={styles.split}>
-        <AdminSection title="Outreach platform">
-          <AdminTable headings={["Measure", "Count"]}>
-            {Object.entries({
-              "Sequence runs": data.outreach.campaigns,
-              "Matched replies": data.outreach.replies,
-              "Skipped recipients": data.outreach.skipped,
-              "Failed jobs": data.outreach.failedJobs,
-              "Connected senders": data.outreach.connectedSenders,
-            }).map(([name, value]) => (
-              <tr key={name}>
-                <td>{name}</td>
-                <td>{value.toLocaleString()}</td>
-              </tr>
-            ))}
-          </AdminTable>
+      <AdminSection
+        title="Outreach activity"
+        description="Confirmed sends and sequence runs by UTC day. Replies are shown separately to preserve a readable scale."
+      >
+        <div className={styles.panel}>
+          <AdminTimeChart
+            data={data.outreachTrend}
+            series={[
+              {
+                key: "sends",
+                name: "Confirmed sends",
+                color: "var(--analysis-green)",
+              },
+              {
+                key: "runs",
+                name: "Sequence runs",
+                color: "var(--analysis-blue)",
+              },
+            ]}
+          />
+          <div className={styles.inlineStats}>
+            <span>
+              Matched replies{" "}
+              <strong>{data.outreach.replies.toLocaleString()}</strong>
+            </span>
+            <span>
+              Failed jobs{" "}
+              <strong>{data.outreach.failedJobs.toLocaleString()}</strong>
+            </span>
+            <span>
+              Skipped recipients{" "}
+              <strong>{data.outreach.skipped.toLocaleString()}</strong>
+            </span>
+          </div>
+        </div>
+      </AdminSection>
+      <div className={styles.twoColumn}>
+        <AdminSection
+          title="Discover activity"
+          description="Search and Add More requests by UTC day"
+        >
+          <div className={styles.panel}>
+            <AdminTimeChart
+              data={data.discoverTrend}
+              height="small"
+              series={[
+                {
+                  key: "searches",
+                  name: "Searches",
+                  color: "var(--analysis-green)",
+                },
+                {
+                  key: "expansions",
+                  name: "Add More",
+                  color: "var(--analysis-purple)",
+                },
+              ]}
+            />
+            <div className={styles.inlineStats}>
+              <span>
+                People allocated{" "}
+                <strong>{data.discover.allocations.toLocaleString()}</strong>
+              </span>
+              <span>
+                Failed searches{" "}
+                <strong>{data.discover.failedSearches.toLocaleString()}</strong>
+              </span>
+            </div>
+          </div>
         </AdminSection>
-        <AdminSection title="Discover">
-          <AdminTable headings={["Measure", "Count"]}>
-            {Object.entries({
-              Searches: data.discover.searches,
-              "People allocated": data.discover.allocations,
-              "Add More actions": data.discover.expansions,
-              "Failed searches": data.discover.failedSearches,
-              "New provider batches": data.discover.providerBatches,
-            }).map(([name, value]) => (
-              <tr key={name}>
-                <td>{name}</td>
-                <td>{value.toLocaleString()}</td>
-              </tr>
-            ))}
-          </AdminTable>
-          <p className={styles.muted}>
-            For operational details,{" "}
-            <Link href="/admin/operations/discover">
-              open Discover operations
-            </Link>
-            .
-          </p>
+        <AdminSection
+          title="Search result sources"
+          description="Persisted source attribution for Discover searches"
+        >
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Searches"
+              items={[
+                { name: "Durable reuse", value: data.discover.reusedSearches },
+                { name: "Provider", value: data.discover.providerSearches },
+              ]}
+            />
+            <div className={styles.inlineStats}>
+              <span>
+                Provider batches{" "}
+                <strong>
+                  {data.discover.providerBatches.toLocaleString()}
+                </strong>
+              </span>
+              <Link href="/admin/operations/discover">
+                Discover operations →
+              </Link>
+            </div>
+          </div>
         </AdminSection>
       </div>
     </AdminShell>

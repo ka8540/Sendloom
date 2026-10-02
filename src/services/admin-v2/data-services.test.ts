@@ -3,6 +3,8 @@ const mock = vi.hoisted(() => ({
   userCount: vi.fn(),
   userFindMany: vi.fn(),
   runGroupBy: vi.fn(),
+  runCount: vi.fn(),
+  rawQuery: vi.fn(),
   jobCount: vi.fn(),
   ledgerCount: vi.fn(),
   senderCount: vi.fn(),
@@ -17,11 +19,16 @@ const mock = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({
   prisma: {
     user: { count: mock.userCount, findMany: mock.userFindMany },
-    campaignRun: { groupBy: mock.runGroupBy, findMany: mock.runFindMany },
+    campaignRun: {
+      groupBy: mock.runGroupBy,
+      count: mock.runCount,
+      findMany: mock.runFindMany,
+    },
     recipientJob: { count: mock.jobCount },
     sendLedger: { count: mock.ledgerCount },
     senderProfile: { count: mock.senderCount },
     prospectSearch: { count: mock.searchCount, findMany: mock.searchFindMany },
+    $queryRaw: mock.rawQuery,
     prospectSearchPerson: { count: mock.allocationCount },
     discoverSearchExpansion: {
       count: mock.expansionCount,
@@ -38,6 +45,8 @@ beforeEach(() => {
   mock.userCount.mockResolvedValue(0);
   mock.userFindMany.mockResolvedValue([]);
   mock.runGroupBy.mockResolvedValue([]);
+  mock.runCount.mockResolvedValue(0);
+  mock.rawQuery.mockResolvedValue([]);
   mock.jobCount.mockResolvedValue(0);
   mock.ledgerCount.mockResolvedValue(0);
   mock.senderCount.mockResolvedValue(0);
@@ -52,15 +61,16 @@ beforeEach(() => {
 
 describe("Admin workspace data services", () => {
   it("searches and paginates restricted users on the server", async () => {
-    await listUsersWorkspace({
+    mock.userCount.mockResolvedValue(51);
+    const result = await listUsersWorkspace({
       status: "restricted",
       query: "case@example.com",
       page: 3,
     });
     expect(mock.userFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        skip: 50,
-        take: 25,
+        skip: 40,
+        take: 20,
         where: {
           AND: [
             expect.objectContaining({
@@ -78,6 +88,21 @@ describe("Admin workspace data services", () => {
         },
       }),
     );
+    expect(result.page).toBe(3);
+    expect(result.pages).toBe(3);
+    expect(result.count).toBe(51);
+  });
+  it("clamps empty and out-of-range user pages before querying rows", async () => {
+    const result = await listUsersWorkspace({
+      status: "all",
+      query: "",
+      page: 999,
+    });
+    expect(result.page).toBe(1);
+    expect(result.count).toBe(0);
+    expect(mock.userFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 20 }),
+    );
   });
   it("aggregates sending signals without selecting recipient content", async () => {
     mock.ledgerCount.mockResolvedValue(12);
@@ -88,7 +113,7 @@ describe("Admin workspace data services", () => {
     expect(result.confirmedSends).toBe(12);
     expect(result.states).toEqual([{ status: "RUNNING", count: 2 }]);
     expect(mock.runFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 20 }),
+      expect.objectContaining({ take: 10, skip: 0 }),
     );
     expect(mock.jobCount).toHaveBeenCalledTimes(2);
   });
@@ -98,7 +123,8 @@ describe("Admin workspace data services", () => {
     expect(result.providers).toEqual([]);
     expect(mock.searchFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        take: 15,
+        take: 10,
+        skip: 0,
         select: { id: true, errorCode: true, updatedAt: true },
       }),
     );

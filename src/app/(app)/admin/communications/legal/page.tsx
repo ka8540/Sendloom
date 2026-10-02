@@ -1,31 +1,44 @@
 import { prisma } from "@/lib/db";
+import { normalizeAdminPage } from "@/services/admin-v2/pagination";
 import {
   AdminEmptyState,
   AdminMetricStrip,
+  AdminPagination,
   AdminPageHeader,
   AdminSection,
   AdminStatusBadge,
   AdminTable,
 } from "@/components/admin-v2/admin-ui";
-export default async function LegalReleasesPage() {
-  const [releases, failed] = await Promise.all([
-    prisma.legalPolicyRelease.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: {
-        id: true,
-        releaseGroup: true,
-        status: true,
-        createdAt: true,
-        completedAt: true,
-        notices: { select: { policy: true, version: true } },
-        _count: { select: { recipients: true } },
-      },
-    }),
+import { formatAdminDate } from "@/components/admin-v2/format";
+export default async function LegalReleasesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const requestedPage = Number((await searchParams).page) || 1;
+  const [count, processing, completed, failed] = await Promise.all([
+    prisma.legalPolicyRelease.count(),
+    prisma.legalPolicyRelease.count({ where: { status: "PROCESSING" } }),
+    prisma.legalPolicyRelease.count({ where: { status: "COMPLETED" } }),
     prisma.legalPolicyReleaseRecipient.count({
       where: { status: "FAILED_PERMANENT" },
     }),
   ]);
+  const page = normalizeAdminPage(requestedPage, count, 20);
+  const releases = await prisma.legalPolicyRelease.findMany({
+    orderBy: { createdAt: "desc" },
+    skip: (page - 1) * 20,
+    take: 20,
+    select: {
+      id: true,
+      releaseGroup: true,
+      status: true,
+      createdAt: true,
+      completedAt: true,
+      notices: { select: { policy: true, version: true } },
+      _count: { select: { recipients: true } },
+    },
+  });
   return (
     <>
       <AdminPageHeader
@@ -34,15 +47,9 @@ export default async function LegalReleasesPage() {
       />
       <AdminMetricStrip
         items={[
-          { label: "Releases", value: releases.length },
-          {
-            label: "Processing",
-            value: releases.filter((r) => r.status === "PROCESSING").length,
-          },
-          {
-            label: "Completed",
-            value: releases.filter((r) => r.status === "COMPLETED").length,
-          },
+          { label: "Releases", value: count },
+          { label: "Processing", value: processing },
+          { label: "Completed", value: completed },
           {
             label: "Permanent failures",
             value: failed,
@@ -85,7 +92,7 @@ export default async function LegalReleasesPage() {
                   />
                 </td>
                 <td>{release._count.recipients}</td>
-                <td>{release.createdAt.toLocaleString()}</td>
+                <td>{formatAdminDate(release.createdAt)}</td>
               </tr>
             ))}
           </AdminTable>
@@ -93,6 +100,12 @@ export default async function LegalReleasesPage() {
           <AdminEmptyState>No grouped legal releases recorded.</AdminEmptyState>
         )}
       </AdminSection>
+      <AdminPagination
+        page={page}
+        pageSize={20}
+        count={count}
+        href={(next) => `/admin/communications/legal?page=${next}`}
+      />
     </>
   );
 }

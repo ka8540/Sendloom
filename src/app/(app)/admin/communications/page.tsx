@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { formatAdminDate } from "@/components/admin-v2/format";
 import {
   AdminEmptyState,
   AdminMetricStrip,
@@ -82,7 +83,7 @@ export default async function CommunicationsPage() {
     <>
       <AdminPageHeader
         title="Communications"
-        description="Account-level announcements, service notices, and legal delivery monitoring."
+        description="Track announcements, service notices, and legal delivery from one place."
       />
       <AdminMetricStrip
         items={[
@@ -111,7 +112,7 @@ export default async function CommunicationsPage() {
               New update
             </Link>{" "}
             <Link
-              className="button"
+              className="button secondary"
               href="/admin/communications/system-notices"
             >
               New notice
@@ -141,7 +142,7 @@ export default async function CommunicationsPage() {
                     }
                   />
                 </td>
-                <td>{item.createdAt.toLocaleString()}</td>
+                <td>{formatAdminDate(item.createdAt)}</td>
               </tr>
             ))}
           </AdminTable>

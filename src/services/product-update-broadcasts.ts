@@ -6,6 +6,7 @@ import {
 
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
+import { normalizeAdminPage } from "@/services/admin-v2/pagination";
 import {
   ProductUpdateActionError,
   ensureFutureProductUpdateInstant,
@@ -87,15 +88,28 @@ async function recipientCountsByBroadcast(broadcastIds: string[]) {
   return counts;
 }
 
-export async function listProductUpdateBroadcasts() {
-  const [broadcasts, accountRecipientCount] = await Promise.all([
+export async function listProductUpdateBroadcasts(requestedPage = 1, requestedActivePage = 1) {
+  const historyWhere: Prisma.ProductUpdateBroadcastWhereInput = { status: { notIn: ["SCHEDULED", "SENDING"] } };
+  const [historyCount, accountRecipientCount, statusCounts, attentionCount] = await Promise.all([
+    prisma.productUpdateBroadcast.count({ where: historyWhere }),
+    prisma.user.count(),
+    prisma.productUpdateBroadcast.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.productUpdateBroadcast.count({ where: { OR: [{ status: "FAILED" }, { recipients: { some: { status: { in: ["PERMANENT_FAILURE", "RETRY"] } } } }] } })
+  ]);
+  const page = normalizeAdminPage(requestedPage, historyCount, 20);
+  const activeCount = statusCounts.filter((row) => row.status === "SCHEDULED" || row.status === "SENDING").reduce((sum, row) => sum + row._count._all, 0);
+  const activePage = normalizeAdminPage(requestedActivePage, activeCount, 20);
+  const [active, history] = await Promise.all([
     prisma.productUpdateBroadcast.findMany({
       include: broadcastInclude,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 200
+      where: { status: { in: ["SCHEDULED", "SENDING"] } },
+      skip: (activePage - 1) * 20,
+      take: 20
     }),
-    prisma.user.count()
+    prisma.productUpdateBroadcast.findMany({ include: broadcastInclude, where: historyWhere, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * 20, take: 20 })
   ]);
+  const broadcasts = [...active, ...history];
   const counts = await recipientCountsByBroadcast(broadcasts.map((broadcast) => broadcast.id));
   const items = broadcasts.map((broadcast) =>
     mapBroadcast(broadcast, counts.get(broadcast.id) ?? { ...EMPTY_RECIPIENT_COUNTS })
@@ -103,16 +117,13 @@ export async function listProductUpdateBroadcasts() {
   return {
     broadcasts: items,
     accountRecipientCount,
+    pagination: { page, pageSize: 20, count: historyCount },
+    activePagination: { page: activePage, pageSize: 20, count: activeCount },
     summary: {
-      scheduled: items.filter((broadcast) => broadcast.status === ProductUpdateBroadcastStatus.SCHEDULED).length,
-      sending: items.filter((broadcast) => broadcast.status === ProductUpdateBroadcastStatus.SENDING).length,
-      completed: items.filter((broadcast) => broadcast.status === ProductUpdateBroadcastStatus.COMPLETED).length,
-      attention: items.filter(
-        (broadcast) =>
-          broadcast.status === ProductUpdateBroadcastStatus.FAILED ||
-          broadcast.delivery.permanentFailures > 0 ||
-          broadcast.delivery.retryable > 0
-      ).length
+      scheduled: statusCounts.find((row) => row.status === ProductUpdateBroadcastStatus.SCHEDULED)?._count._all ?? 0,
+      sending: statusCounts.find((row) => row.status === ProductUpdateBroadcastStatus.SENDING)?._count._all ?? 0,
+      completed: statusCounts.find((row) => row.status === ProductUpdateBroadcastStatus.COMPLETED)?._count._all ?? 0,
+      attention: attentionCount
     }
   };
 }

@@ -1,7 +1,12 @@
 .shell {
   --danger: #a62f40;
+  --analysis-green: #18a66b;
+  --analysis-blue: #3b82f6;
+  --analysis-purple: #8b5cf6;
+  --analysis-orange: #e39031;
+  --analysis-grid: color-mix(in srgb, var(--line) 72%, transparent);
   display: grid;
-  gap: 1.55rem;
+  gap: 1.35rem;
   max-width: 1380px;
   margin: 0 auto;
   padding-bottom: 3rem;
@@ -80,6 +85,15 @@
 }
 .metric + .metric {
   border-left: 1px solid var(--line);
+}
+.metrics:has(> .metric:nth-child(5)) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.metrics:has(> .metric:nth-child(5)) .metric:nth-child(4) {
+  border-left: 0;
+}
+.metrics:has(> .metric:nth-child(5)) .metric:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
 }
 .metric span {
   font-size: 0.82rem;
@@ -160,7 +174,7 @@
 .error {
   border: 1px dashed var(--line);
   border-radius: 0.75rem;
-  padding: 1.4rem;
+  padding: 1rem 1.2rem;
   color: var(--muted);
   background: var(--surface);
 }
@@ -199,6 +213,19 @@
 }
 .table tbody tr:hover {
   background: var(--surface-hover);
+}
+.clickableRow {
+  position: relative;
+  cursor: pointer;
+}
+.clickableRow td:first-child a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.clickableRow:focus-within {
+  outline: 2px solid var(--field-focus);
+  outline-offset: -2px;
 }
 .table a {
   font-weight: 650;
@@ -247,6 +274,403 @@
 .toolbar select {
   min-height: 2.5rem;
 }
+.controlBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.controlBar .searchField {
+  flex: 1 1 19rem;
+  max-width: 35rem;
+}
+.controlBar > .muted {
+  margin-left: auto;
+  font-size: 0.84rem;
+}
+.searchField {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  min-height: 2.55rem;
+  padding: 0 0.8rem;
+  border: 1px solid var(--field-border);
+  border-radius: 11px;
+  color: var(--muted);
+  background: var(--field-bg);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.searchField:hover,
+.field:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--field-border));
+}
+.searchField:focus-within {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.searchField input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.89rem;
+}
+.searchField input::placeholder {
+  color: var(--muted);
+}
+.field {
+  min-height: 2.55rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--field-border);
+  border-radius: 11px;
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.field:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+select.field {
+  appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23788782' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+}
+.filterPanel {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  padding: 0.8rem 1rem;
+}
+.filterPanel summary {
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 650;
+  list-style: none;
+}
+.filterPanel summary::-webkit-details-marker {
+  display: none;
+}
+.filterPanel[open] summary {
+  margin-bottom: 0.85rem;
+}
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.filterGrid label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+.filterActions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+.filterChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.filterChips span {
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.eventDisclosure summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.eventDisclosure summary:hover {
+  color: var(--accent-strong);
+}
+.eventDisclosure summary:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+.eventDisclosure dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.7rem;
+  margin: 0.6rem 0 0;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  font-size: 0.78rem;
+}
+.eventDisclosure dt {
+  color: var(--muted);
+}
+.eventDisclosure dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0.1rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.paginationControls a,
+.paginationDisabled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 9px;
+  color: var(--text);
+  text-decoration: none;
+}
+.paginationControls a:hover {
+  background: var(--surface-hover);
+}
+.paginationControls a:focus-visible {
+  outline: 2px solid var(--field-focus);
+}
+.paginationControls strong {
+  color: var(--text);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.paginationDisabled {
+  opacity: 0.38;
+}
+.pagerButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.45rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.pagerButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.pagerButton:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.pagerButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+}
+.twoColumn {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.3rem;
+  align-items: start;
+}
+.successRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--success);
+  padding: 0.8rem 1rem;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+  font-weight: 650;
+}
+.dataList {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem 1rem;
+  margin: 0;
+  font-size: 0.86rem;
+}
+.dataList dt {
+  color: var(--muted);
+}
+.dataList dd {
+  margin: 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.definitionRow {
+  display: contents;
+}
+.inlineStats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.inlineStats strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.3rem;
+}
+.inlineStats a {
+  margin-left: auto;
+}
+.chartFrame {
+  min-width: 0;
+  height: 240px;
+}
+.chartFrameSmall {
+  min-width: 0;
+  height: 190px;
+}
+.compactEmpty {
+  margin: 0.5rem 0 0;
+  padding: 1rem;
+  color: var(--muted);
+  background: var(--surface-muted);
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+.chartTooltip {
+  min-width: 10rem;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.78rem;
+  color: var(--text);
+}
+.chartTooltip > strong {
+  display: block;
+  margin-bottom: 0.45rem;
+}
+.chartTooltip > div {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.18rem 0;
+}
+.chartTooltip > div span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+}
+.chartTooltip b {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.chartLegend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+.chartLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.chartLegend i {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+}
+.progressList {
+  display: grid;
+  gap: 0.8rem;
+}
+.progressItem {
+  display: grid;
+  gap: 0.35rem;
+}
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-size: 0.82rem;
+}
+.progressMeta strong {
+  font-weight: 650;
+}
+.progressMeta span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.progressTrack {
+  height: 0.52rem;
+  border-radius: 99px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+.progressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  min-width: 0;
+}
+.accountGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+.healthGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+.healthCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  font-size: 0.85rem;
+}
+.activityRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.activityRow small {
+  color: var(--muted);
+  white-space: nowrap;
+}
 .sparkline {
   display: flex;
   align-items: flex-end;
@@ -267,6 +691,22 @@
   border-radius: 0.75rem;
 }
 @media (max-width: 900px) {
+  .metrics:has(> .metric:nth-child(5)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .metrics:has(> .metric:nth-child(5)) .metric:nth-child(4) {
+    border-left: 1px solid var(--line);
+  }
+  .metrics:has(> .metric:nth-child(5)) .metric:nth-child(odd) {
+    border-left: 0;
+  }
+  .metrics:has(> .metric:nth-child(5)) .metric:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+  .twoColumn,
+  .accountGrid {
+    grid-template-columns: 1fr;
+  }
   .metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -289,6 +729,20 @@
   }
 }
 @media (max-width: 560px) {
+  .metrics:has(> .metric:nth-child(5)) {
+    grid-template-columns: 1fr;
+  }
+  .metrics:has(> .metric:nth-child(5)) .metric {
+    border-left: 0;
+  }
+  .filterGrid,
+  .healthGrid {
+    grid-template-columns: 1fr;
+  }
+  .pagination {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .metrics {
     grid-template-columns: 1fr;
   }
@@ -300,4 +754,8 @@
 
 :global(:root[data-theme="dark"]) .shell {
   --danger: #ff8f9b;
+  --analysis-green: #2fc48a;
+  --analysis-blue: #65a3ff;
+  --analysis-purple: #a77cff;
+  --analysis-orange: #f3aa53;
 }

@@ -118,20 +118,23 @@ export function AdminUserControls(props: AdminUserControlsProps) {
     <div className={styles.controlPanel}>
       <div className={styles.toggleList}>
         {[
-          ["apiAccessDisabled", "Disable all app APIs"],
-          ["importsWriteDisabled", "Block import changes"],
-          ["templatesWriteDisabled", "Block template saves"],
-          ["launchesDisabled", "Block launches and scheduling"],
-          ["aiEnhancementsDisabled", "Block AI enhancement API"]
+          ["apiAccessDisabled", "API access"],
+          ["importsWriteDisabled", "Import writes"],
+          ["templatesWriteDisabled", "Template writes"],
+          ["launchesDisabled", "Sequence launches"],
+          ["aiEnhancementsDisabled", "AI enhancements"]
         ].map(([key, label]) => (
           <label key={key} className={styles.toggleItem}>
+            <span>{label}</span>
+            <span className={styles.toggleState}>{controls[key as keyof typeof controls] ? "Disabled" : "Enabled"}</span>
             <input
               type="checkbox"
-              checked={controls[key as keyof typeof controls]}
-              onChange={(event) => updateControl(key as keyof typeof controls, event.target.checked)}
+              role="switch"
+              aria-label={`${label} enabled`}
+              checked={!controls[key as keyof typeof controls]}
+              onChange={(event) => updateControl(key as keyof typeof controls, !event.target.checked)}
               disabled={isSaving || isDeleting}
             />
-            <span>{label}</span>
           </label>
         ))}
       </div>
@@ -140,15 +143,9 @@ export function AdminUserControls(props: AdminUserControlsProps) {
         <button className="button secondary" type="button" onClick={() => saveControls(false)} disabled={isSaving || isDeleting}>
           {isSaving ? "Saving..." : "Save controls"}
         </button>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => saveControls(true)}
-          disabled={!props.isLoggedIn || isSaving || isDeleting}
-        >
-          Revoke sessions
-        </button>
       </div>
+
+      <div className={styles.sessionRow}><div><h3>Session</h3><p>Sign this account out of current sessions.</p></div><button className="button secondary" type="button" onClick={() => saveControls(true)} disabled={!props.isLoggedIn || isSaving || isDeleting}>Revoke all sessions</button></div>
 
       <div className={styles.dangerZone}><h3>Danger zone</h3><p>Delete this account and its stored data permanently.</p>
         <button

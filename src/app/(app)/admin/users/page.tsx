@@ -8,13 +8,20 @@ import {
 import {
   AdminEmptyState,
   AdminMetricStrip,
+  AdminPagination,
   AdminPageHeader,
+  AdminSearchInput,
   AdminShell,
   AdminStatusBadge,
   AdminTable,
   AdminTabs,
   adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
+import {
+  formatAdminDate,
+  formatAdminInstant,
+  formatAdminRelative,
+} from "@/components/admin-v2/format";
 export default async function UsersPage({
   searchParams,
 }: {
@@ -45,8 +52,16 @@ export default async function UsersPage({
       />
       <AdminMetricStrip
         items={[
-          { label: "Total users", value: data.summary.total },
-          { label: "Active · 24h", value: data.summary.active },
+          {
+            label: "Total accounts",
+            value: data.summary.total,
+            note: "Includes admins",
+          },
+          {
+            label: "Active product users · 24h",
+            value: data.summary.active,
+            note: "Latest activity",
+          },
           {
             label: "Needs attention",
             value: data.summary.attention,
@@ -74,13 +89,11 @@ export default async function UsersPage({
           }),
         }))}
       />
-      <form method="get" action="/admin/users" className={styles.toolbar}>
-        <input
-          type="search"
-          name="q"
-          defaultValue={q}
+      <form method="get" action="/admin/users" className={styles.controlBar}>
+        <AdminSearchInput
+          value={q}
           placeholder="Search email or exact user ID"
-          aria-label="Search users"
+          label="Search users"
         />
         {status !== "all" && (
           <input type="hidden" name="status" value={status} />
@@ -90,7 +103,7 @@ export default async function UsersPage({
         </button>
         {q && <Link href={href({ q: "", page: "1" }) as Route}>Clear</Link>}
         <span className={styles.muted}>
-          {data.count.toLocaleString()} results
+          {data.count.toLocaleString()} users
         </span>
       </form>
       {data.users.length ? (
@@ -115,7 +128,7 @@ export default async function UsersPage({
               user.aiEnhancementsDisabled,
             );
             return (
-              <tr key={user.id}>
+              <tr key={user.id} className={styles.clickableRow}>
                 <td>
                   <Link href={`/admin/users/${user.id}`}>{user.email}</Link>
                 </td>
@@ -139,15 +152,19 @@ export default async function UsersPage({
                     }
                   />
                 </td>
-                <td>
-                  {user.lastSeenAt
-                    ? new Date(user.lastSeenAt).toLocaleString()
-                    : "—"}
+                <td
+                  title={
+                    user.lastSeenAt
+                      ? formatAdminInstant(user.lastSeenAt)
+                      : undefined
+                  }
+                >
+                  {formatAdminRelative(user.lastSeenAt)}
                 </td>
                 <td>{user._count.senderProfiles}</td>
                 <td>{user._count.campaigns}</td>
                 <td>{user._count.prospectSearches}</td>
-                <td>{new Date(user.createdAt).toLocaleDateString()}</td>
+                <td>{formatAdminDate(user.createdAt)}</td>
               </tr>
             );
           })}
@@ -155,21 +172,12 @@ export default async function UsersPage({
       ) : (
         <AdminEmptyState>No users match these filters.</AdminEmptyState>
       )}
-      <div className={styles.toolbar}>
-        <span>
-          Page {data.page} of {data.pages}
-        </span>
-        {data.page > 1 && (
-          <Link href={href({ page: String(data.page - 1) }) as Route}>
-            ← Previous
-          </Link>
-        )}
-        {data.page < data.pages && (
-          <Link href={href({ page: String(data.page + 1) }) as Route}>
-            Next →
-          </Link>
-        )}
-      </div>
+      <AdminPagination
+        page={data.page}
+        pageSize={data.pageSize}
+        count={data.count}
+        href={(page) => href({ page: String(page) })}
+      />
     </AdminShell>
   );
 }

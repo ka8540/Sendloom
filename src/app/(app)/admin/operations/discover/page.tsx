@@ -1,13 +1,26 @@
 import { getDiscoverOperations } from "@/services/admin-v2/operations";
 import {
+  AdminRankedBars,
+  AdminTimeChart,
+} from "@/components/admin-v2/admin-charts";
+import { formatAdminInstant } from "@/components/admin-v2/format";
+import {
   AdminEmptyState,
   AdminMetricStrip,
+  AdminPagination,
   AdminSection,
   AdminStatusBadge,
   AdminTable,
+  adminUiStyles as styles,
 } from "@/components/admin-v2/admin-ui";
-export default async function DiscoverPage() {
-  const data = await getDiscoverOperations();
+export default async function DiscoverPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const data = await getDiscoverOperations(
+    Number((await searchParams).page) || 1,
+  );
   return (
     <>
       <AdminMetricStrip
@@ -23,26 +36,57 @@ export default async function DiscoverPage() {
         ]}
       />
       <AdminSection
-        title="Source and processing"
-        description="Persisted provenance and expansion states"
+        title="Search activity"
+        description="Searches and failed searches by UTC day, last 7 days"
       >
-        <AdminTable headings={["Measure", "Count"]}>
-          <tr>
-            <td>Durable reuse</td>
-            <td>{data.reuse}</td>
-          </tr>
-          <tr>
-            <td>External discovery</td>
-            <td>{data.external}</td>
-          </tr>
-          {data.expansionStates.map((row) => (
-            <tr key={row.status}>
-              <td>Expansion: {row.status}</td>
-              <td>{row.count}</td>
-            </tr>
-          ))}
-        </AdminTable>
+        <div className={styles.panel}>
+          <AdminTimeChart
+            data={data.trend}
+            series={[
+              {
+                key: "searches",
+                name: "Searches",
+                color: "var(--analysis-green)",
+              },
+              {
+                key: "failures",
+                name: "Failed searches",
+                color: "var(--analysis-orange)",
+              },
+            ]}
+          />
+        </div>
       </AdminSection>
+      <div className={styles.twoColumn}>
+        <AdminSection
+          title="Result sources"
+          description="Persisted Discover provenance, last 24 hours"
+        >
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Searches"
+              items={[
+                { name: "Durable reuse", value: data.reuse },
+                { name: "Provider", value: data.external },
+              ]}
+            />
+          </div>
+        </AdminSection>
+        <AdminSection
+          title="Provider batches"
+          description="Persisted provider attribution, last 24 hours"
+        >
+          <div className={styles.panel}>
+            <AdminRankedBars
+              label="Batches"
+              items={data.providers.map((row) => ({
+                name: row.provider,
+                value: row.count,
+              }))}
+            />
+          </div>
+        </AdminSection>
+      </div>
       <AdminSection
         title="Provider batches"
         description="Persisted provider attribution in the last 24 hours"
@@ -77,7 +121,7 @@ export default async function DiscoverPage() {
                     tone="warning"
                   />
                 </td>
-                <td>{new Date(row.updatedAt).toLocaleString()}</td>
+                <td>{formatAdminInstant(row.updatedAt)}</td>
               </tr>
             ))}
           </AdminTable>
@@ -85,6 +129,10 @@ export default async function DiscoverPage() {
           <AdminEmptyState>No failed searches recorded.</AdminEmptyState>
         )}
       </AdminSection>
+      <AdminPagination
+        {...data.failurePagination}
+        href={(page) => `/admin/operations/discover?page=${page}`}
+      />
     </>
   );
 }

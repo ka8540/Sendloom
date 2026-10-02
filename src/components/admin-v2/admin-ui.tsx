@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import styles from "./admin-ui.module.css";
 
 export function AdminShell({ children }: { children: ReactNode }) {
@@ -130,6 +131,88 @@ export function AdminStatusBadge({
 
 export function AdminEmptyState({ children }: { children: ReactNode }) {
   return <div className={styles.empty}>{children}</div>;
+}
+
+export function AdminSearchInput({
+  name = "q",
+  value,
+  placeholder,
+  label,
+}: {
+  name?: string;
+  value: string;
+  placeholder: string;
+  label: string;
+}) {
+  return (
+    <label className={styles.searchField}>
+      <Search size={17} aria-hidden="true" />
+      <input
+        type="search"
+        name={name}
+        defaultValue={value}
+        placeholder={placeholder}
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+export function AdminPagination({
+  page,
+  pageSize,
+  count,
+  href,
+}: {
+  page: number;
+  pageSize: number;
+  count: number;
+  href: (page: number) => string;
+}) {
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  const first = count ? (page - 1) * pageSize + 1 : 0;
+  const last = Math.min(page * pageSize, count);
+  return (
+    <nav className={styles.pagination} aria-label="Results pages">
+      <span>
+        Showing {first.toLocaleString()}–{last.toLocaleString()} of{" "}
+        {count.toLocaleString()}
+      </span>
+      <div className={styles.paginationControls}>
+        {page > 1 ? (
+          <Link href={href(page - 1) as Route} aria-label="Previous page">
+            <ChevronLeft size={16} />
+            <span>Previous</span>
+          </Link>
+        ) : (
+          <span
+            className={styles.paginationDisabled}
+            aria-label="Previous page unavailable"
+          >
+            <ChevronLeft size={16} />
+            <span>Previous</span>
+          </span>
+        )}
+        <strong>
+          Page {page} of {pages}
+        </strong>
+        {page < pages ? (
+          <Link href={href(page + 1) as Route} aria-label="Next page">
+            <span>Next</span>
+            <ChevronRight size={16} />
+          </Link>
+        ) : (
+          <span
+            className={styles.paginationDisabled}
+            aria-label="Next page unavailable"
+          >
+            <span>Next</span>
+            <ChevronRight size={16} />
+          </span>
+        )}
+      </div>
+    </nav>
+  );
 }
 
 export function AdminErrorState({ children }: { children: ReactNode }) {
