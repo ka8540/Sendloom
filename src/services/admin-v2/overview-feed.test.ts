@@ -20,6 +20,7 @@ vi.mock("@/lib/db", () => ({
     campaignRun: { count: mock.count, groupBy: mock.groupBy },
     systemNotice: { count: mock.count, groupBy: mock.groupBy },
     productUpdateBroadcast: { count: mock.count, groupBy: mock.groupBy },
+    accountDeletionRequest: { count: mock.count },
     $queryRaw: mock.raw,
   },
 }));

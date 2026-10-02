@@ -65,8 +65,12 @@ export function getVerificationBlockMessage(
     eligibilityBlockedAt?: Date | null;
     restrictedAt?: Date | null;
     restrictedReason?: string | null;
+    deletedAt?: Date | null;
   }
 ) {
+  if (user.deletedAt) {
+    return "This account has been deleted.";
+  }
   if (user.eligibilityBlockedAt) {
     return "Sendloom is not available to users under 18.";
   }

@@ -4,7 +4,6 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   transaction: vi.fn(),
   audit: vi.fn(),
-  deleteObject: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -16,9 +15,7 @@ vi.mock("@/lib/auth", () => ({
   isAdminUser: (user: { isAdmin: boolean }) => user.isAdmin,
 }));
 vi.mock("@/lib/audit", () => ({ recordAuditEvent: mocks.audit }));
-vi.mock("@/lib/storage", () => ({ deleteObject: mocks.deleteObject }));
 import {
-  deleteUserAccountData,
   restrictUserAccount,
   unrestrictUserAccount,
   updateUserAdminControls,
@@ -30,7 +27,7 @@ beforeEach(() => {
 });
 describe("admin account safety", () => {
   it.each(["self", "admin"])(
-    "blocks %s restriction, control changes, and deletion before mutation",
+    "blocks %s restriction and control changes before mutation",
     async (kind) => {
       const id = kind === "self" ? "admin-1" : "admin-2";
       mocks.findUnique.mockResolvedValue({
@@ -54,9 +51,6 @@ describe("admin account safety", () => {
           launchesDisabled: false,
           aiEnhancementsDisabled: false,
         }),
-      ).rejects.toMatchObject({ status: 403 });
-      await expect(
-        deleteUserAccountData({ ...actor, userId: id }),
       ).rejects.toMatchObject({ status: 403 });
       expect(mocks.update).not.toHaveBeenCalled();
       expect(mocks.transaction).not.toHaveBeenCalled();

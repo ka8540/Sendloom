@@ -139,6 +139,16 @@ const termsSections = [
     ]
   },
   {
+    id: "account-deletion",
+    title: "Deleting your account",
+    paragraphs: [
+      "You can stop using Sendloom and choose a deletion option in Account Settings. Self-service deletion is available for eligible non-admin accounts.",
+      "Delete my account ends access to that account. Sendloom revokes its login sessions and credentials, removes the profile photo, clears connected Gmail credentials, stops active sending, and replaces account and sender identity with deleted-account references. This choice does not request deletion of eligible private outreach workspace records, which remain associated with the non-login account record.",
+      "Delete my account and outreach data submits a separate request for eligible private workspace data. An administrator reviews the request to verify its scope and safely carry out the irreversible process. Account access ends when processing begins; eligible private records and user-owned stored files are removed after approval and successful processing. Shared public Discover knowledge is outside the user's private account data.",
+      "Security and audit event history may remain in sanitized form after either choice. Direct account identifiers are removed or replaced with a deleted-account reference as part of the deletion process. You may create a new account later if you meet Sendloom's eligibility rules and no applicable security or enforcement restriction prevents it."
+    ]
+  },
+  {
     id: "availability-and-changes",
     title: "Availability and changes",
     paragraphs: [
@@ -159,6 +169,7 @@ const termsSections = [
     id: "termination",
     title: "Termination",
     paragraphs: [
+      "You may choose to delete your account through Account Settings as described above. This user-requested deletion is separate from Sendloom's enforcement actions.",
       "We may suspend or terminate access to Sendloom if these terms are violated, if required by law, or if continued access creates risk to the service or other users."
     ]
   },
@@ -210,8 +221,7 @@ const privacySections = [
     title: "Age and eligibility",
     paragraphs: [
       "Sendloom is intended for users 18 years of age and older. We do not knowingly collect personal information from individuals under 18.",
-      "Users who indicate they are under 18 are blocked from using the service. We do not collect exact date of birth; eligibility is confirmed through an adult certification step during onboarding.",
-      "Accounts that have not completed eligibility verification within 30 days of creation may be purged, along with any associated temporary data."
+      "Users who indicate they are under 18 are blocked from using the service. We do not collect exact date of birth; eligibility is confirmed through an adult certification step during onboarding."
     ]
   },
   {
@@ -256,9 +266,9 @@ const privacySections = [
     id: "account-service-email",
     title: "Account and service email delivery",
     paragraphs: [
-      "Sendloom uses a transactional email service provider, currently Resend, to deliver operational account and service communications. These communications may include account verification codes, password-recovery verification codes, other password or security verification messages, and important policy-update notices.",
+      "Sendloom uses a transactional email service provider, currently Resend, to deliver operational account and service communications. These communications may include account verification codes, password-recovery verification codes, other password or security verification messages, important policy-update notices, and deletion-related confirmations.",
       "To deliver these messages, the provider may process your account email address, the message content, and delivery metadata needed to route, deliver, secure, and troubleshoot the email.",
-      "Account and service communications are sent to the email address associated with your Sendloom account. They are not sent through a Gmail sender account that you connect for outreach."
+      "When you delete an account or submit a full-data deletion request, Sendloom attempts to send a farewell, request-received, or completion email as applicable. Email delivery can fail without reversing a completed deletion. These account and service communications use Sendloom's transactional email service, not a Gmail sender account that you connect for outreach."
     ]
   },
   {
@@ -327,9 +337,26 @@ const privacySections = [
     title: "How data is stored and retained",
     paragraphs: [
       "Sendloom stores account data, templates, campaign records, sender profile details, and imported audience data in the application database and related service infrastructure.",
-      "We retain information for as long as it is needed to operate your account, comply with legal obligations, resolve disputes, and enforce our agreements.",
+      "While an account is active, information is retained as needed to operate the service, protect it, resolve disputes, and meet applicable obligations. The deletion choices below have different scopes; neither removes every historical security or shared public record.",
       "Temporary account-verification and password-recovery challenges, authorization information, and related security records expire or are retained only for the limited period needed to complete or protect those processes, subject to legitimate security, auditing, or legal needs. Limited policy-notice delivery records may be retained for reliability, auditing, duplicate prevention, retry handling, and troubleshooting.",
       "AI-feature inputs, outputs, and related operational metadata may be retained for the purposes described in this policy. Retention periods may depend on the feature, the type of data, account status, security and support needs, provider arrangements, and applicable law."
+    ]
+  },
+  {
+    id: "account-and-data-deletion",
+    title: "Account and private-data deletion",
+    paragraphs: [
+      "Eligible non-admin account holders can choose either deletion option in Account Settings. Delete my account immediately ends account access, revokes sessions and sign-in credentials, clears connected Gmail credentials and sender identity, removes the profile photo, and replaces the account email with a deleted-account reference. Existing private outreach workspace records remain; this option does not request their deletion.",
+      "Delete my account and outreach data creates a request that can be cancelled while it is pending review. An administrator reviews the request to confirm its scope and safely execute an irreversible purge. A request rejected during review does not start private-data deletion. When processing begins, account access and sending are disabled. After approval and successful processing, Sendloom removes eligible user-owned private records, including imports and mappings, templates, sequences and runs, recipient jobs and replies, sender profiles, suppressions, private Discover searches and selections, prepared exports, and related notifications and delivery records.",
+      "The full process also deletes user-owned import files, attachments, and profile photos from Sendloom's object storage. A processing failure can leave the request awaiting an administrator's retry; Sendloom does not promise a fixed completion time."
+    ]
+  },
+  {
+    id: "records-that-remain",
+    title: "Records that may remain",
+    paragraphs: [
+      "After either deletion option, Sendloom retains limited audit and security event history for service integrity, abuse prevention, accountability, and applicable obligations. The deletion process removes or replaces direct account identifiers in matching audit records and may link events to a pseudonymous deleted-account reference. Incident reports can retain a pseudonym while reversible reporter references and free-text notes are cleared.",
+      "Discover activity and records owned privately by the deleted account are removed through the full-data process. Independently stored, shared public business-profile knowledge and common supporting data are not treated as that account's private workspace records merely because the user previously found the same public person. Global notices and policy-release history also remain, while the deleted account's delivery receipts are removed."
     ]
   },
   {
@@ -337,8 +364,7 @@ const privacySections = [
     title: "Data minimization",
     paragraphs: [
       "Sendloom does not collect exact date of birth, unnecessary location data, device fingerprints, or behavioral analytics from users who have not completed eligibility verification.",
-      "Incomplete or unverified onboarding records may be purged after 30 days if the user never completed eligibility and policy confirmation.",
-      "Data needed for fraud prevention, security, or legal compliance is retained as required regardless of verification status."
+      "Data needed for fraud prevention, security, or legal compliance may be retained regardless of verification status."
     ]
   },
   {
@@ -356,7 +382,7 @@ const privacySections = [
     bullets: [
       "You can stop using Sendloom at any time.",
       "You can disconnect Google access from your Google account permissions page.",
-      "You can request deletion of your account data by contacting us."
+      "Eligible non-admin accounts can choose account-only deletion or request account and eligible private outreach-data deletion in Account Settings. Contact us if you have questions about a data request."
     ]
   },
   {
@@ -414,7 +440,8 @@ const abuseSections = [
     title: "Enforcement",
     paragraphs: [
       "When Sendloom identifies a violation, the account may be restricted, suspended, or permanently terminated depending on severity.",
-      "Sendloom reserves the right to restrict first and investigate second when the potential for harm is immediate."
+      "Sendloom reserves the right to restrict first and investigate second when the potential for harm is immediate.",
+      "Deleting an account does not erase sanitized audit or security history that Sendloom retains to investigate abuse and protect the service."
     ]
   },
   {
@@ -458,13 +485,12 @@ export const LEGAL_POLICIES = {
     id: "terms",
     title: "Terms of Service",
     path: "/terms",
-    version: "2026-08-24",
-    releaseGroup: "2026-08-24-account-recovery-security",
-    lastUpdated: "August 24, 2026",
+    version: "2026-10-02",
+    releaseGroup: "2026-10-02-account-deletion",
+    lastUpdated: "October 2, 2026",
     changeSummary: [
-      "Added information about secure password recovery using verification through the email associated with your Sendloom account.",
-      "Clarified that successful password recovery may revoke existing sessions and require you to sign in again.",
-      "Clarified password-security requirements that apply when establishing a replacement password."
+      "Added the two user-requested account deletion choices and their different effects on outreach data.",
+      "Explained review and processing for eligible private-data deletion, including retained security history."
     ],
     sections: termsSections
   },
@@ -472,13 +498,13 @@ export const LEGAL_POLICIES = {
     id: "privacy",
     title: "Privacy Policy",
     path: "/privacy",
-    version: "2026-08-24",
-    releaseGroup: "2026-08-24-account-recovery-security",
-    lastUpdated: "August 24, 2026",
+    version: "2026-10-02",
+    releaseGroup: "2026-10-02-account-deletion",
+    lastUpdated: "October 2, 2026",
     changeSummary: [
-      "Added details about the account information and temporary security data used during Forgot Password and password recovery.",
-      "Clarified how password-recovery verification codes are delivered and how temporary recovery data is used to protect the process.",
-      "Added information about session revocation and other security measures applied after a successful password reset."
+      "Explained what account-only and full private-data deletion remove or retain.",
+      "Clarified review, stored-file deletion, shared Discover data, and sanitized audit history.",
+      "Added deletion-related transactional email details and removed an unsupported onboarding purge timeframe."
     ],
     sections: privacySections
   },
@@ -486,13 +512,11 @@ export const LEGAL_POLICIES = {
     id: "abuse",
     title: "Anti-Abuse Policy",
     path: "/abuse",
-    version: "2026-08-24",
-    releaseGroup: "2026-08-24-account-recovery-security",
-    lastUpdated: "August 24, 2026",
+    version: "2026-10-02",
+    releaseGroup: "2026-10-02-account-deletion",
+    lastUpdated: "October 2, 2026",
     changeSummary: [
-      "Expanded the Anti-Abuse Policy to prohibit unauthorized use of Sendloom's password-recovery process.",
-      "Added protections against password-reset email abuse and repeated recovery requests intended to harass or disrupt users.",
-      "Clarified that attempts to bypass, brute-force, replay, or automate password-recovery security controls are prohibited."
+      "Clarified that sanitized security and abuse history may remain after account deletion."
     ],
     sections: abuseSections
   }

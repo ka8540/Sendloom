@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { Camera, KeyRound, Loader2, Mail, Plus, Trash2, UserRound, UserRoundX } from "lucide-react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import { AccountDeletionSection } from "@/components/account/account-deletion-section";
+import { AccountSettingsSection } from "@/components/account/account-settings-section";
 import { useErrorToast } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import {
@@ -74,6 +76,8 @@ export function AccountDashboard({
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordChallenge, setPasswordChallenge] = useState<OtpChallengeMetadata | null>(null);
+  const [activeSection, setActiveSection] = useState<"information" | "senders" | "password" | "deletion" | null>("information");
+  const deleteHeaderRef = useRef<HTMLButtonElement>(null);
 
   const currentPasswordId = useId();
   const newPasswordId = useId();
@@ -312,338 +316,106 @@ export function AccountDashboard({
   }, [applyProfilePhotoUrl, photoRemoving, showError, showSuccess]);
 
   const { profile, senders, canRemoveSenders } = overview;
+  const connectedSenderCount = senders.filter((sender) => sender.status === "connected").length;
+  const toggleSection = (section: typeof activeSection) => setActiveSection((current) => current === section ? null : section);
 
   return (
     <div className={styles.page}>
       <WorkspacePageHeader
-        title="Account"
-        subtitle="Manage your identity, connected Gmail senders, and security."
+        title="Account settings"
+        subtitle={profile.name ? `${profile.name} · ${profile.email}` : profile.email}
       />
 
-      {loadError ? (
-        <p className={styles.loadError} role="alert">
-          {loadError}
-        </p>
-      ) : null}
+      {loadError ? <p className={styles.loadError} role="alert">{loadError}</p> : null}
 
-      {/* Identity card ------------------------------------------------------ */}
-      <section className={`card ${styles.identityCard}`} aria-labelledby="account-profile-heading">
-        <div className={styles.identityMain}>
-          {profile.profilePhotoUrl && !photoFailed ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.profilePhotoUrl}
-              alt="Profile photo"
-              className={styles.avatarImage}
-              referrerPolicy="no-referrer"
-              onError={() => setPhotoFailed(true)}
-            />
-          ) : (
-            <span className={styles.avatar} aria-hidden="true">
-              {accountInitial(profile)}
-            </span>
-          )}
-          <div className={styles.identityText}>
-            <h2 id="account-profile-heading" className={styles.identityName}>
-              {profile.name ?? profile.email}
-            </h2>
-            {profile.name ? <p className={styles.identityEmail}>{profile.email}</p> : null}
-            <p className={styles.identityType}>
-              <span className={styles.typeDot} aria-hidden="true" />
-              {ACCOUNT_TYPE_LABELS[profile.accountType]}
-            </p>
-            <div className={styles.photoControls}>
-              <input
-                ref={photoInputRef}
-                id={photoInputId}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className={styles.photoInput}
-                onChange={onPhotoSelected}
-                disabled={photoUploading || photoRemoving}
-                aria-label="Choose a profile photo"
-              />
-              <button
-                type="button"
-                className={styles.photoButton}
-                onClick={() => photoInputRef.current?.click()}
-                disabled={photoUploading || photoRemoving}
-                aria-describedby={photoError ? photoErrorId : undefined}
-              >
-                {photoUploading ? (
-                  <Loader2 aria-hidden="true" className={styles.spin} />
-                ) : (
-                  <Camera aria-hidden="true" />
-                )}
-                {photoUploading ? "Uploading…" : profile.profilePhotoUrl ? "Change photo" : "Upload photo"}
-              </button>
-              {profile.profilePhotoUrl ? (
-                <button
-                  type="button"
-                  className={styles.photoRemoveButton}
-                  onClick={() => {
-                    setPhotoError(null);
-                    setPendingPhotoRemoval(true);
-                  }}
-                  disabled={photoUploading || photoRemoving}
-                >
-                  Remove
+      <div className={styles.settings}>
+        <AccountSettingsSection id="information" title="Account information" description="Manage your profile and account details." icon={UserRound} expanded={activeSection === "information"} onToggle={() => toggleSection("information")}>
+          <div className={styles.profileRow}>
+            {profile.profilePhotoUrl && !photoFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={profile.profilePhotoUrl} alt="Profile photo" className={styles.avatarImage} referrerPolicy="no-referrer" onError={() => setPhotoFailed(true)} />
+            ) : <span className={styles.avatar} aria-hidden="true">{accountInitial(profile)}</span>}
+            <div className={styles.profileCopy}>
+              <strong>{profile.name ?? profile.email}</strong>
+              <span>{ACCOUNT_TYPE_LABELS[profile.accountType]}</span>
+              <div className={styles.photoControls}>
+                <input ref={photoInputRef} id={photoInputId} type="file" accept="image/jpeg,image/png,image/webp" className={styles.photoInput} onChange={onPhotoSelected} disabled={photoUploading || photoRemoving} aria-label="Choose a profile photo" />
+                <button type="button" className={styles.photoButton} onClick={() => photoInputRef.current?.click()} disabled={photoUploading || photoRemoving} aria-describedby={photoError ? photoErrorId : undefined}>
+                  {photoUploading ? <Loader2 aria-hidden="true" className={styles.spin} /> : <Camera aria-hidden="true" />}
+                  {photoUploading ? "Uploading…" : profile.profilePhotoUrl ? "Change photo" : "Upload photo"}
                 </button>
-              ) : null}
+                {profile.profilePhotoUrl ? <button type="button" className={styles.photoRemoveButton} onClick={() => { setPhotoError(null); setPendingPhotoRemoval(true); }} disabled={photoUploading || photoRemoving}>Remove</button> : null}
+              </div>
+              {photoError ? <p id={photoErrorId} className={styles.formError} role="alert">{photoError}</p> : null}
             </div>
-            {photoError ? (
-              <p id={photoErrorId} className={styles.formError} role="alert">
-                {photoError}
-              </p>
-            ) : null}
           </div>
-        </div>
+          <dl className={styles.details}>
+            <div><dt>Email</dt><dd>{profile.email}</dd></div>
+            <div><dt>Member since</dt><dd><LocalDateTime value={profile.createdAt} emptyLabel="Not available" /></dd></div>
+            <div><dt>Last sign-in</dt><dd><LocalDateTime value={profile.lastLoginAt} emptyLabel="Not available" /></dd></div>
+          </dl>
+        </AccountSettingsSection>
 
-        <dl className={styles.identityStats}>
-          <div className={styles.identityStat}>
-            <dt className={styles.statLabel}>Member since</dt>
-            <dd className={styles.statValue}>
-              <LocalDateTime value={profile.createdAt} emptyLabel="Not available" />
-            </dd>
-          </div>
-          <div className={styles.identityStat}>
-            <dt className={styles.statLabel}>Last sign-in</dt>
-            <dd className={styles.statValue}>
-              <LocalDateTime value={profile.lastLoginAt} emptyLabel="Not available" />
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <div className={styles.columns}>
-        {/* Connected senders ------------------------------------------------ */}
-        <section className={`card ${styles.panel}`} aria-labelledby="account-senders-heading" aria-busy={refreshing}>
-          <div className={styles.panelHead}>
-            <div className={styles.panelHeadCopy}>
-              <h2 id="account-senders-heading" className={styles.panelTitle}>
-                Connected Gmail senders
-              </h2>
-              <p className={styles.panelSubtitle}>Gmail accounts available for sending sequences.</p>
-            </div>
-            {refreshing ? (
-              <span className={styles.updating}>
-                <Loader2 aria-hidden="true" className={styles.spin} />
-                Updating…
-              </span>
-            ) : null}
-          </div>
-
-          {senders.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon} aria-hidden="true">
-                <Mail />
-              </span>
-              <p className={styles.emptyTitle}>No senders connected yet</p>
-              <p className={styles.emptyBody}>Connect a Gmail account to start sending sequences.</p>
-              <a className={`button ${styles.connectButton}`} href={connectGmailHref}>
-                <Plus aria-hidden="true" />
-                Connect Gmail
-              </a>
-            </div>
-          ) : (
-            <>
-              <ul className={styles.senderList}>
-                {senders.map((sender) => {
-                  const connected = sender.status === "connected";
-                  return (
-                    <li key={sender.id} className={styles.senderRow}>
-                      <span className={styles.senderTile} aria-hidden="true">
-                        <Mail />
-                      </span>
+        <AccountSettingsSection id="senders" title="Connected Gmail senders" description="Manage Gmail accounts available for sending sequences." icon={Mail} meta={`${connectedSenderCount} connected`} expanded={activeSection === "senders"} onToggle={() => toggleSection("senders")}>
+          <div aria-busy={refreshing}>
+            {refreshing ? <span className={styles.updating}><Loader2 aria-hidden="true" className={styles.spin} />Updating…</span> : null}
+            {senders.length === 0 ? (
+              <div className={styles.emptyState}>
+                <strong>No senders connected yet</strong>
+                <p>Connect a Gmail account to start sending sequences.</p>
+                <a className="button" href={connectGmailHref}><Plus aria-hidden="true" />Connect Gmail</a>
+              </div>
+            ) : (
+              <>
+                <ul className={styles.senderList}>
+                  {senders.map((sender) => {
+                    const connected = sender.status === "connected";
+                    return <li key={sender.id} className={styles.senderRow}>
+                      <span className={styles.senderTile} aria-hidden="true"><Mail /></span>
                       <div className={styles.senderMain}>
-                        <p className={styles.senderName}>{sender.name}</p>
-                        <p className={styles.senderEmail}>{sender.fromEmail}</p>
-                        <p className={styles.senderMeta}>
-                          {sender.providerLabel} · connected{" "}
-                          <LocalDateTime value={sender.connectedAt} emptyLabel="recently" />
-                        </p>
+                        <strong className={styles.senderName}>{sender.name}</strong>
+                        <span className={styles.senderEmail}>{sender.fromEmail}</span>
+                        <span className={styles.senderMeta}>{sender.providerLabel} · Added <LocalDateTime value={sender.connectedAt} emptyLabel="recently" /></span>
                       </div>
                       <div className={styles.senderSide}>
-                        <span className={`${styles.senderStatus} ${connected ? styles.statusOk : styles.statusWarn}`}>
-                          <span className={styles.statusDot} aria-hidden="true" />
-                          {connected ? "Connected" : "Reconnect required"}
-                        </span>
-                        {connected ? null : (
-                          <a className={styles.reconnectLink} href={reconnectHref(sender.fromEmail)}>
-                            Reconnect
-                          </a>
-                        )}
-                        {canRemoveSenders ? (
-                          <button
-                            type="button"
-                            className={styles.removeButton}
-                            onClick={() => {
-                              setRemoveError(null);
-                              setPendingRemoval(sender);
-                            }}
-                            aria-label={`Remove sender ${sender.fromEmail}`}
-                            title="Remove"
-                          >
-                            <Trash2 aria-hidden="true" />
-                          </button>
-                        ) : null}
+                        <span className={`${styles.senderStatus} ${connected ? styles.statusOk : styles.statusWarn}`}><span className={styles.statusDot} aria-hidden="true" />{connected ? "Connected" : "Reconnect required"}</span>
+                        {connected ? null : <a className={styles.reconnectLink} href={reconnectHref(sender.fromEmail)}>Reconnect</a>}
+                        {canRemoveSenders ? <button type="button" className={styles.removeButton} onClick={() => { setRemoveError(null); setPendingRemoval(sender); }} aria-label={`Remove sender ${sender.fromEmail}`} title="Remove"><Trash2 aria-hidden="true" /></button> : null}
                       </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {!canRemoveSenders ? (
-                <p className={styles.helperText}>
-                  Connect another Gmail account before removing this sender.
-                </p>
-              ) : null}
-
-              <a className={styles.addSenderRow} href={connectGmailHref}>
-                <span className={styles.addSenderIcon} aria-hidden="true">
-                  <Plus />
-                </span>
-                Connect another Gmail
-              </a>
-            </>
-          )}
-        </section>
-
-        {/* Password ----------------------------------------------------------- */}
-        <section className={`card ${styles.panel}`} aria-labelledby="account-password-heading">
-          <div className={styles.panelHead}>
-            <div className={styles.panelHeadCopy}>
-              <h2 id="account-password-heading" className={styles.panelTitle}>
-                <span className={styles.titleIcon} aria-hidden="true">
-                  <KeyRound />
-                </span>
-                {hasPassword ? "Password" : "Set a password"}
-              </h2>
-              <p className={styles.panelSubtitle}>
-                {hasPassword
-                  ? "Update the password used for email sign-in."
-                  : "This account signs in with Google. Add a password to also sign in with email."}
-              </p>
-            </div>
+                    </li>;
+                  })}
+                </ul>
+                {!canRemoveSenders ? <p className={styles.helperText}>Connect another Gmail account before removing this sender.</p> : null}
+                <a className={styles.addSenderRow} href={connectGmailHref}><Plus aria-hidden="true" />Connect another Gmail</a>
+              </>
+            )}
           </div>
+        </AccountSettingsSection>
 
-          {passwordChallenge ? (
-            <OtpVerificationForm
-              challenge={passwordChallenge}
-              verifyEndpoint="/api/account/password/verify"
-              resendEndpoint="/api/account/password/resend"
-              submitLabel="Verify & update password"
-              cancelLabel="Cancel"
-              onCancel={() => {
-                setPasswordChallenge(null);
-                setPasswordError(null);
-              }}
-              onSuccess={async ({ message }) => {
-                setPasswordChallenge(null);
-                setPasswordError(null);
-                await refresh();
-                showSuccess(message ?? PASSWORD_UPDATE_SUCCESS_MESSAGE);
-              }}
-            />
-          ) : (
-            <form className={`form ${styles.passwordForm}`} onSubmit={submitPassword} noValidate>
-              {hasPassword ? (
-                <div className="field">
-                  <label htmlFor={currentPasswordId}>Current password</label>
-                  <input
-                    id={currentPasswordId}
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    aria-invalid={passwordError ? true : undefined}
-                    aria-describedby={passwordError ? passwordErrorId : undefined}
-                    disabled={savingPassword}
-                  />
-                </div>
-              ) : null}
+        <AccountSettingsSection id="password" title="Password" description="Manage the password used to sign in to Sendloom." icon={KeyRound} expanded={activeSection === "password"} onToggle={() => toggleSection("password")}>
+          <div className={styles.passwordInner}>
+            {!hasPassword ? <p className={styles.passwordIntro}>This account signs in with Google. Set a password to also sign in with email.</p> : null}
+            {passwordChallenge ? (
+              <OtpVerificationForm challenge={passwordChallenge} verifyEndpoint="/api/account/password/verify" resendEndpoint="/api/account/password/resend" submitLabel="Verify & update password" cancelLabel="Cancel" onCancel={() => { setPasswordChallenge(null); setPasswordError(null); }} onSuccess={async ({ message }) => { setPasswordChallenge(null); setPasswordError(null); await refresh(); showSuccess(message ?? PASSWORD_UPDATE_SUCCESS_MESSAGE); }} />
+            ) : (
+              <form className={`form ${styles.passwordForm}`} onSubmit={submitPassword} noValidate>
+                {hasPassword ? <div className="field"><label htmlFor={currentPasswordId}>Current password</label><input id={currentPasswordId} type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} aria-invalid={passwordError ? true : undefined} aria-describedby={passwordError ? passwordErrorId : undefined} disabled={savingPassword} /></div> : null}
+                <div className="field"><label htmlFor={newPasswordId}>New password</label><input id={newPasswordId} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} aria-invalid={passwordError ? true : undefined} aria-describedby={passwordError ? passwordErrorId : undefined} disabled={savingPassword} minLength={MIN_PASSWORD_LENGTH} /><p className={styles.fieldHint}>At least {MIN_PASSWORD_LENGTH} characters.</p></div>
+                <div className="field"><label htmlFor={confirmPasswordId}>Confirm new password</label><input id={confirmPasswordId} type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} aria-invalid={passwordError ? true : undefined} aria-describedby={passwordError ? passwordErrorId : undefined} disabled={savingPassword} minLength={MIN_PASSWORD_LENGTH} /></div>
+                {passwordError ? <p id={passwordErrorId} className={styles.formError} role="alert">{passwordError}</p> : null}
+                <div className={styles.formActions}><button type="submit" className="button" disabled={savingPassword}>{savingPassword ? <Loader2 aria-hidden="true" className={styles.spin} /> : null}{savingPassword ? "Saving…" : hasPassword ? "Update password" : "Set password"}</button></div>
+              </form>
+            )}
+          </div>
+        </AccountSettingsSection>
 
-              <div className="field">
-                <label htmlFor={newPasswordId}>New password</label>
-                <input
-                  id={newPasswordId}
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  aria-invalid={passwordError ? true : undefined}
-                  aria-describedby={passwordError ? passwordErrorId : undefined}
-                  disabled={savingPassword}
-                  minLength={MIN_PASSWORD_LENGTH}
-                />
-                <p className={styles.fieldHint}>At least {MIN_PASSWORD_LENGTH} characters.</p>
-              </div>
-
-              <div className="field">
-                <label htmlFor={confirmPasswordId}>Confirm new password</label>
-                <input
-                  id={confirmPasswordId}
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  aria-invalid={passwordError ? true : undefined}
-                  aria-describedby={passwordError ? passwordErrorId : undefined}
-                  disabled={savingPassword}
-                  minLength={MIN_PASSWORD_LENGTH}
-                />
-              </div>
-
-              {passwordError ? (
-                <p id={passwordErrorId} className={styles.formError} role="alert">
-                  {passwordError}
-                </p>
-              ) : null}
-
-              <div className={styles.formActions}>
-                <button type="submit" className="button" disabled={savingPassword}>
-                  {savingPassword ? <Loader2 aria-hidden="true" className={styles.spin} /> : null}
-                  {savingPassword ? "Saving…" : hasPassword ? "Update password" : "Set password"}
-                </button>
-              </div>
-            </form>
-          )}
-        </section>
+        <AccountSettingsSection id="deletion" title="Delete account" description="Delete your Sendloom account or request permanent removal of your outreach data." icon={UserRoundX} danger expanded={activeSection === "deletion"} onToggle={() => toggleSection("deletion")} headerRef={deleteHeaderRef}>
+          <AccountDeletionSection onKeepUsing={() => { setActiveSection(null); requestAnimationFrame(() => deleteHeaderRef.current?.focus()); }} />
+        </AccountSettingsSection>
       </div>
 
-      <AppConfirmDialog
-        open={pendingRemoval !== null}
-        title="Remove sender?"
-        description={pendingRemoval ? describeSenderRemoval(pendingRemoval.fromEmail) : ""}
-        confirmLabel="Remove sender"
-        loadingLabel="Removing…"
-        destructive
-        loading={removing}
-        error={removeError}
-        onConfirm={confirmRemoval}
-        onCancel={() => {
-          if (!removing) {
-            setPendingRemoval(null);
-            setRemoveError(null);
-          }
-        }}
-      />
-
-      <AppConfirmDialog
-        open={pendingPhotoRemoval}
-        title="Remove profile photo?"
-        description="Your account goes back to showing your initial. You can upload a new photo anytime."
-        confirmLabel="Remove photo"
-        loadingLabel="Removing…"
-        destructive
-        loading={photoRemoving}
-        onConfirm={confirmPhotoRemoval}
-        onCancel={() => {
-          if (!photoRemoving) {
-            setPendingPhotoRemoval(false);
-          }
-        }}
-      />
+      <AppConfirmDialog open={pendingRemoval !== null} title="Remove sender?" description={pendingRemoval ? describeSenderRemoval(pendingRemoval.fromEmail) : ""} confirmLabel="Remove sender" loadingLabel="Removing…" destructive loading={removing} error={removeError} onConfirm={confirmRemoval} onCancel={() => { if (!removing) { setPendingRemoval(null); setRemoveError(null); } }} />
+      <AppConfirmDialog open={pendingPhotoRemoval} title="Remove profile photo?" description="Your account goes back to showing your initial. You can upload a new photo anytime." confirmLabel="Remove photo" loadingLabel="Removing…" destructive loading={photoRemoving} onConfirm={confirmPhotoRemoval} onCancel={() => { if (!photoRemoving) setPendingPhotoRemoval(false); }} />
     </div>
   );
 }

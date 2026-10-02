@@ -125,6 +125,13 @@ const sendWorker = new Worker(
       senderProfileId: recipientJob.campaignRun.campaign.senderProfileId
     };
 
+    // A deletion claim revokes web sessions immediately; queued workers must
+    // also stop before they reserve capacity or hand a message to Gmail.
+    if (scope.userId) {
+      const owner = await prisma.user.findUnique({ where: { id: scope.userId }, select: { deletedAt: true } });
+      if (!owner || owner.deletedAt) return;
+    }
+
     let activeReservationId: string | null = null;
 
     try {
@@ -174,6 +181,17 @@ const sendWorker = new Worker(
           }
         );
         return;
+      }
+
+      // Capacity waits can overlap an admin's deletion approval. Recheck the
+      // owner immediately before the external Gmail call.
+      if (scope.userId) {
+        const owner = await prisma.user.findUnique({ where: { id: scope.userId }, select: { deletedAt: true } });
+        if (!owner || owner.deletedAt) {
+          await releaseSendReservation(scope, activeReservationId);
+          activeReservationId = null;
+          return;
+        }
       }
 
       const sender = recipientJob.campaignRun.campaign.senderSnapshot as {

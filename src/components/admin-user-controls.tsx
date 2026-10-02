@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "@/components/admin-v2/admin-user-controls.module.css";
-
-const DELETE_USER_ERROR = "This user could not be deleted. Please try again.";
 
 type AdminUserControlsProps = {
   userId: string;
@@ -27,11 +25,8 @@ type AdminUserControlsProps = {
 export function AdminUserControls(props: AdminUserControlsProps) {
   const router = useRouter();
   const [isSaving, startSaving] = useTransition();
-  const [isDeleting, startDeleting] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [controls, setControls] = useState(props.initialControls);
   useErrorToastEffect(error, "Admin action failed");
 
@@ -74,32 +69,6 @@ export function AdminUserControls(props: AdminUserControlsProps) {
     });
   }
 
-  function confirmDeleteUser() {
-    setMessage(null);
-    setDeleteError(null);
-
-    startDeleting(async () => {
-      try {
-        const response = await fetch(`/api/admin/users/${props.userId}`, {
-          method: "DELETE"
-        });
-
-        if (!response.ok) {
-          setDeleteError(DELETE_USER_ERROR);
-          return;
-        }
-      } catch {
-        setDeleteError(DELETE_USER_ERROR);
-        return;
-      }
-
-      setDeleteConfirmOpen(false);
-      setMessage("User deleted.");
-      router.push("/admin/users");
-      router.refresh();
-    });
-  }
-
   if (controlsLocked) {
     return (
       <div className={styles.controlPanel}>
@@ -133,53 +102,25 @@ export function AdminUserControls(props: AdminUserControlsProps) {
               aria-label={`${label} enabled`}
               checked={!controls[key as keyof typeof controls]}
               onChange={(event) => updateControl(key as keyof typeof controls, !event.target.checked)}
-              disabled={isSaving || isDeleting}
+              disabled={isSaving}
             />
           </label>
         ))}
       </div>
 
       <div className={styles.controlActions}>
-        <button className="button secondary" type="button" onClick={() => saveControls(false)} disabled={isSaving || isDeleting}>
+        <button className="button secondary" type="button" onClick={() => saveControls(false)} disabled={isSaving}>
           {isSaving ? "Saving..." : "Save controls"}
         </button>
       </div>
 
-      <div className={styles.sessionRow}><div><h3>Session</h3><p>Sign this account out of current sessions.</p></div><button className="button secondary" type="button" onClick={() => saveControls(true)} disabled={!props.isLoggedIn || isSaving || isDeleting}>Revoke all sessions</button></div>
+      <div className={styles.sessionRow}><div><h3>Session</h3><p>Sign this account out of current sessions.</p></div><button className="button secondary" type="button" onClick={() => saveControls(true)} disabled={!props.isLoggedIn || isSaving}>Revoke all sessions</button></div>
 
-      <div className={styles.dangerZone}><h3>Danger zone</h3><p>Delete this account and its stored data permanently.</p>
-        <button
-          className={styles.deleteButton}
-          type="button"
-          onClick={() => {
-            setDeleteError(null);
-            setDeleteConfirmOpen(true);
-          }}
-          disabled={isSaving || isDeleting}
-        >
-          {isDeleting ? "Deleting..." : "Delete all user data"}
-        </button>
-      </div>
+      <div className={styles.dangerZone}><h3>Deletion requests</h3><p>Review account and outreach deletion requests in the Users workspace. Audit and security history is retained.</p><Link className="button secondary" href="/admin/users/deletion-requests">Open deletion requests</Link></div>
 
       {message ? <p className={styles.successText}>{message}</p> : null}
       {error ? <p className={styles.errorText}>{error}</p> : null}
 
-      <AppConfirmDialog
-        open={deleteConfirmOpen}
-        title="Delete this user?"
-        description={`Deleting ${props.email} permanently wipes all of their imports, templates, sequences, suppressions, senders, and stored files. This action cannot be undone.`}
-        confirmLabel="Delete user"
-        loadingLabel="Deleting…"
-        destructive
-        loading={isDeleting}
-        error={deleteError}
-        onConfirm={confirmDeleteUser}
-        onCancel={() => {
-          if (!isDeleting) {
-            setDeleteConfirmOpen(false);
-          }
-        }}
-      />
     </div>
   );
 }

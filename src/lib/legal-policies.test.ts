@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { computeLegalPolicyContentHash } from "@/lib/legal-policy-fingerprint";
 import {
@@ -16,26 +17,48 @@ describe("legal policy registry", () => {
     expect(LEGAL_POLICIES.abuse).toMatchObject({ title: "Anti-Abuse Policy", path: "/abuse" });
   });
 
-  it("has valid release metadata and changed content for the August 24, 2026 account-recovery release", () => {
+  it("releases the changed policies together with new content fingerprints", () => {
     const previousReleaseHashes = {
-      terms: "53090cd2b21140fe2d1472fe424dadb900d84f37e5f5f1acd5ba5f8804f089de",
-      privacy: "b80e1f00921699932ea60a992df75a77611752a99d71db0830e60606f810ca2a",
-      abuse: "217e658352ae89ccf9e9750a08f9508d2589ac868da2e16357f379c769856162"
+      terms: "f2464b731634b12ce6dcdc79d6d26133be7709f5cf31ceb036e3cead378a1999",
+      privacy: "9b51c8de4c92ad8b2dcc729d1c0f2a866547a11677f8b4fc5939f0180dd20610",
+      abuse: "d6be738343438cd62c528692c068913182c8dface24bceff1dcfeabc8654bc4b"
     } as const;
 
     expect(validateLegalPolicyRegistry()).toEqual([]);
     expect(new Set(LEGAL_POLICY_LIST.map((policy) => policy.releaseGroup))).toEqual(
-      new Set(["2026-08-24-account-recovery-security"])
+      new Set(["2026-10-02-account-deletion"])
     );
     for (const policy of LEGAL_POLICY_LIST) {
-      expect(policy.version).toBe("2026-08-24");
-      expect(policy.releaseGroup).toBe("2026-08-24-account-recovery-security");
-      expect(policy.lastUpdated).toBe("August 24, 2026");
+      expect(policy.version).toBe("2026-10-02");
+      expect(policy.releaseGroup).toBe("2026-10-02-account-deletion");
+      expect(policy.lastUpdated).toBe("October 2, 2026");
       expect(policy.changeSummary.length).toBeGreaterThan(0);
       expect(policy.sections.length).toBeGreaterThan(0);
       expect(computeLegalPolicyContentHash(policy)).toMatch(/^[a-f0-9]{64}$/);
       expect(computeLegalPolicyContentHash(policy)).not.toBe(previousReleaseHashes[policy.id]);
     }
+  });
+
+  it("renders the deletion policy sections through the existing public Terms and Privacy pages", () => {
+    const termsPage = readFileSync("src/app/terms/page.tsx", "utf8");
+    const privacyPage = readFileSync("src/app/privacy/page.tsx", "utf8");
+    expect(termsPage).toContain("sections={policy.sections}");
+    expect(privacyPage).toContain("sections={policy.sections}");
+    const terms = LEGAL_POLICIES.terms.sections.find((section) => section.id === "account-deletion");
+    const privacy = LEGAL_POLICIES.privacy.sections.find((section) => section.id === "account-and-data-deletion");
+    expect(terms?.paragraphs?.join(" ")).toContain("Delete my account and outreach data");
+    expect(privacy?.paragraphs?.join(" ")).toContain("eligible user-owned private records");
+    expect(LEGAL_POLICIES.privacy.sections.find((section) => section.id === "records-that-remain")?.paragraphs?.join(" ")).toContain("audit and security event history");
+    expect(LEGAL_POLICIES.abuse.sections.find((section) => section.id === "enforcement")?.paragraphs?.join(" ")).toContain("Deleting an account");
+    expect(JSON.stringify(LEGAL_POLICIES.privacy.sections)).not.toContain("within 30 days");
+  });
+
+  it("leaves the existing eligibility acceptance gate tied to timestamps", () => {
+    const layout = readFileSync("src/app/(app)/layout.tsx", "utf8");
+    const eligibilityRoute = readFileSync("src/app/api/auth/verify-eligibility/route.ts", "utf8");
+    expect(layout).toContain("!user.termsAcceptedAt || !user.privacyAcceptedAt || !user.antiAbuseAcceptedAt");
+    expect(layout).not.toContain("LEGAL_POLICIES");
+    expect(eligibilityRoute).toContain('const POLICY_VERSION = "1.0"');
   });
 
   it("changes the fingerprint for policy text or meaningful metadata edits", () => {

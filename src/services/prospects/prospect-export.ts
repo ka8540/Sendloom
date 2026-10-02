@@ -454,6 +454,23 @@ export async function deleteProspectExport(exportId: string) {
   await getRedis().del(exportRedisKey(exportId));
 }
 
+/** Remove short-lived prepared workbooks for a departing account immediately. */
+export async function deletePreparedProspectExportsForUser(userId: string) {
+  const redis = getRedis();
+  let cursor = "0";
+  do {
+    const [next, keys] = await redis.scan(cursor, "MATCH", `${EXPORT_REDIS_PREFIX}:*`, "COUNT", 100);
+    cursor = next;
+    for (const key of keys) {
+      const raw = await redis.get(key);
+      if (!raw) continue;
+      let owner: string | undefined;
+      try { owner = (JSON.parse(raw) as { userId?: string }).userId; } catch { continue; }
+      if (owner === userId) await redis.del(key);
+    }
+  } while (cursor !== "0");
+}
+
 export async function createProspectImport(prisma: PrismaClient, userId: string, input: ProspectSelectionInput) {
   const resolved = await resolveProspectSelection(prisma, userId, input);
   const content = buildProspectExportWorkbook(resolved.rows);

@@ -18,6 +18,11 @@ const highlights = [
     detail: "Accounts can be suspended or terminated when terms are violated or risk is created."
   },
   {
+    label: "Your choice",
+    value: "Delete account",
+    detail: "Eligible account holders can choose account-only or private-data deletion in Account Settings."
+  },
+  {
     label: "Age",
     value: "18+ only",
     detail: "Sendloom is for adults conducting lawful business outreach. Users must be 18 or older."
@@ -39,7 +44,7 @@ const quickFacts = [
   },
   {
     title: "Termination",
-    body: "Access may be suspended or terminated when required by law or when risk to the service appears."
+    body: "You can choose deletion in Account Settings. Sendloom may separately restrict or terminate access for enforcement reasons."
   },
   {
     title: "Age requirement",
@@ -60,14 +65,14 @@ export default function TermsPage() {
       ]}
       description="These Terms of Service govern your use of Sendloom and outline the responsibilities that come with account access, connected senders, and lawful outreach activity."
       eyebrow="Service boundaries"
-      guideBody="This version keeps the substance of the original terms intact, but organizes the reading path around the questions operators usually have before they connect a sender or launch outreach."
+      guideBody="Start with account responsibility and lawful outreach, then review the deletion choices and enforcement rules that affect access."
       guideTitle="The quick read"
       highlights={highlights}
       lastUpdated={policy.lastUpdated}
       quickFacts={quickFacts}
       relatedHref="/privacy"
       relatedLabel="Read privacy policy"
-      sectionBody="The sections below cover the major operating boundaries: lawful use, account responsibility, sender responsibility, product changes, suspension, and the standard service disclaimer."
+      sectionBody="The sections below cover lawful use, account and sender responsibility, deletion choices, enforcement, product changes, and the service disclaimer."
       sectionEyebrow="Terms details"
       sectionTitle="How Sendloom can be used and where responsibility stays."
       sections={policy.sections}

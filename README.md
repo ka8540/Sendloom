@@ -73,7 +73,7 @@ Finder was Sendloom's Hunter.io-backed email lookup and domain-search experience
 | Navigation and help | Finder is absent from the normal sidebar and the active help-route registry. The old Finder manual and dashboard component remain in source for possible reuse. |
 | Old URL | `/finder` is retained as a server-side redirect to `/prospects`, so saved links do not land on the old UI or a 404. |
 | Public product copy | Landing and FAQ pages describe Imports and Discover; they do not advertise Hunter key setup or Finder searches. |
-| Historical activity | Stored `hunter.*` audit events and `HunterDomainSearch` records are preserved. If shown on Overview, they use neutral contact-lookup wording and link to `/prospects`. Admin audit records retain their original identifiers. |
+| Historical activity | Stored `hunter.*` audit events and `HunterDomainSearch` records are preserved while their owner account remains active. If shown on Overview, they use neutral contact-lookup wording and link to `/prospects`. Deleting an account can scrub matching audit identifiers or remove user-owned Hunter searches according to the chosen deletion scope. |
 | Backend and data | Hunter client/crypto helpers, key and saved-search services, API handlers, Prisma fields, migrations, encrypted user keys, and search history remain intact. Existing authenticated API routes were **not disabled** by this UI change; hiding Finder is not an API access control. |
 | Discover | Its provider pipeline, quotas, email inference, and public email-format evidence logic are unchanged. A public Hunter.io page may still be considered as evidence; the old Hunter API/Finder workflow is not part of Discover's visible navigation. |
 
@@ -481,6 +481,7 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 - `GET /api/auth/google/connect`, `GET /api/auth/google/callback`
 - `GET /api/auth/eligibility-status`, `POST /api/auth/verify-eligibility`, `POST /api/auth/report-ineligible`
 - `GET /api/account` — profile + connected senders (never returns hashes or tokens)
+- `GET`/`POST /api/account/deletion`, `POST /api/account/deletion/cancel` — read/request a deletion choice or cancel a pending full-data request
 - `POST /api/account/password` — validate/hash the proposed password and send an OTP; does not update the user
 - `POST /api/account/password/verify` — consume the user-bound OTP, update the password hash, and rotate the session
 - `POST /api/account/password/resend` — atomically rotate and resend the pending password code
@@ -523,7 +524,7 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 ### Incidents, admin, health
 
 - `POST /api/incidents`, `POST /api/incidents/events`
-- `GET /api/admin/users`, `PATCH`/`DELETE /api/admin/users/[id]`, `GET /api/admin/users/search`, `/[id]/summary`, `/[id]/activity`
+- `GET /api/admin/users`, `PATCH /api/admin/users/[id]`, `GET /api/admin/users/search`, `/[id]/summary`, `/[id]/activity`
 - `GET /api/admin/incidents`, `PATCH /api/admin/incidents/[id]`, `GET /api/admin/system-health`
 - `GET`/`POST /api/admin/system-notices`, `GET`/`PATCH /api/admin/system-notices/[id]`, plus `/preview`, `/schedule`, `/send-now`, and `/cancel` actions
 - `GET /api/health`
@@ -929,3 +930,15 @@ Start historical repair with:
 ```sh
 npx tsx scripts/repair-discover-person-names.ts --dry-run --batch-size 50 --limit 1000
 ```
+
+### Account deletion
+
+The centered `/account` settings workspace has Account information, Connected Gmail senders, Password, and Delete account disclosures. The deletion section links to the public Privacy Policy and Terms. Eligible non-admin users can choose **Delete my account** to immediately revoke sessions and credentials, remove profile information, disconnect Gmail credentials, stop active sends, and retain outreach records behind a non-login tombstone. **Delete my account and outreach data** creates one active `AccountDeletionRequest`; the request stays visible on Account until an admin reviews it in **Admin → Users → Deletion requests** (`/admin/users/deletion-requests`). Pending requests can be cancelled. Admin approval disables access and runs the server-side purge; failed work can be retried, and a processing request older than 24 hours can be resumed. The old direct admin user-delete action has been removed so it cannot bypass review or delete audit history.
+
+The additive `20261002120000_account_deletion_workflow` migration adds `User.deletedAt`, `AccountDeletionRequest`, and `AccountDeletionObject`. Account-only and full deletion use Sendloom's Resend account, never a connected Gmail sender, for farewell, request-received, and completion emails. Stable Resend idempotency keys guard retries. Failed email delivery does not restore deleted data. The account-only farewell address exists only in request memory after the tombstone update; full-deletion completion mail is attempted after private-data cleanup and before the account email is anonymized.
+
+The full purge removes private imports, rows, mappings, templates, sequences, runs, jobs, replies, suppressions, senders, SendLedger rows, attachment assets, user-specific notification receipts, Hunter searches, and private Discover searches, allocations, people, and companies. Its durable object manifest tracks import files, attachment objects, and profile photos for retry-safe R2/local deletion. Shared `DiscoverPublicPerson`, provider batches, legacy shared caches, title intelligence, global notices, and product updates remain. Audit/security events remain, with legacy actor-email rows and matching identity-bearing fields scrubbed; incident reports keep their pseudonym but lose reversible reporter references. The processor leaves failed requests in `FAILED` with the account disabled for admin retry. Audit logs cannot be selected for deletion.
+
+Routes: `GET/POST /api/account/deletion`, `POST /api/account/deletion/cancel`, `GET /api/admin/deletion-requests`, `GET /api/admin/deletion-requests/[id]`, `POST /api/admin/deletion-requests/[id]/approve`, and `POST /api/admin/deletion-requests/[id]/reject`. Mutations use the existing CSRF middleware and rate limits; admin routes use `requireAdminApiUser`.
+
+The public Terms, Privacy Policy, and FAQ explain the two scopes, the review step, and retained sanitized audit/security history. Privacy also distinguishes user-owned private Discover activity, which the full purge removes, from independently stored shared public business knowledge, which remains. The Anti-Abuse Policy notes that sanitized security and abuse history can remain after deletion. Terms, Privacy, and Anti-Abuse are released together as version `2026-10-02` with `releaseGroup: "2026-10-02-account-deletion"`; the existing legal-notice processor groups their account-service notice after deployment. The onboarding eligibility gate continues to check acceptance timestamps and does not force existing users to re-accept solely because the public policy release version changed. Final policy wording still requires qualified legal review before production release.

@@ -401,7 +401,7 @@ Production note: this document describes product behavior and repository content
 
 `User.isAdmin` remains the only runtime admin authority. The sidebar has six top-level workspaces: Overview, Users, Analytics, Operations, Communications, and Audit & Security. Workspace tabs hold Platform/Sending/Discover/Incidents and Overview/Product Updates/System Notices/Legal Releases. The shared Admin V2 shell supplies headers, metrics, tabs, tables, badges, and empty/error states using the existing light/dark tokens.
 
-Overview (`/admin`) answers platform health, use, and attention with counts from persisted data. Confirmed sends come from `SendLedger`; health reuses `getSystemHealth()`; attention items come from failed runs/broadcasts, high-severity open incidents, and unhealthy checks. The compact attention row collapses when clear; product pulse charts seven zero-filled UTC days. Analytics (`/admin/analytics`) uses 7/30/90-day daily series for growth, outreach, and Discover, plus persisted milestone and adoption bars. Activation milestones are independently measured current/historical signals; their percentages use all product users as denominator and do not claim sequential drop-off. Its total is explicitly **product users**, excluding admins. Admin Users' total includes admins; “active product users” counts non-admin accounts whose latest `lastSeenAt` falls within the stated period. The chart labels that last-seen signal directly instead of implying complete daily active-user history. Users (`/admin/users`) uses server search, status filters, and 20-row URL-backed pagination, clamping out-of-range requests. Each detail (`/admin/users/[id]`) has Overview, Usage, Access, and Activity tabs, including a 30-day usage series. The Access tab uses the existing guarded API and service for capability changes, session revocation, restriction, and deletion.
+Overview (`/admin`) answers platform health, use, and attention with counts from persisted data. Confirmed sends come from `SendLedger`; health reuses `getSystemHealth()`; attention items come from failed runs/broadcasts, high-severity open incidents, and unhealthy checks. The compact attention row collapses when clear; product pulse charts seven zero-filled UTC days. Analytics (`/admin/analytics`) uses 7/30/90-day daily series for growth, outreach, and Discover, plus persisted milestone and adoption bars. Activation milestones are independently measured current/historical signals; their percentages use all product users as denominator and do not claim sequential drop-off. Its total is explicitly **product users**, excluding admins. Admin Users' total includes admins; “active product users” counts non-admin accounts whose latest `lastSeenAt` falls within the stated period. The chart labels that last-seen signal directly instead of implying complete daily active-user history. Users (`/admin/users`) uses server search, status filters, and 20-row URL-backed pagination, clamping out-of-range requests. Each detail (`/admin/users/[id]`) has Overview, Usage, Access, and Activity tabs, including a 30-day usage series. The Access tab uses the existing guarded API and service for capability changes, session revocation, and restriction. Account and private-data deletion uses the separate review queue.
 
 Operations (`/admin/operations`) contains Platform health, Sending run/job/sender state, Discover search/allocation/provider state, and privacy-preserving incident triage. Sending and Discover plot seven-day grouped records and paginate failed rows at 10 per page; incidents use 20-row server pages with URL filters. Communications (`/admin/communications`) contains a recent combined view plus independent Product Update and System Notice composers and delivery ledgers. Each queue and history is server-paginated at 20 rows without changing preview, snapshot, schedule, or delivery processors. Legal Releases (`/admin/communications/legal`) is a read-only 20-row delivery monitor; legal text is not edited in admin. Audit & Security (`/admin/audit`) offers 25-row server pages with search and expandable category, severity, user, action, and UTC date filters. Metadata is not rendered in the global table; user activity includes legacy email-only rows.
 
@@ -529,9 +529,9 @@ Runtime shape:
 | `/signup` | Account creation | Public; redirects if already signed in | Email/password signup is credentials → six-digit email OTP → account/session. Google path is unchanged. |
 | `/login` | Account sign-in | Public; redirects if already signed in | Email/password and Google sign-in. |
 | `/faq` | Frequently asked questions | Public | Uses marketing/legal nav and footer. |
-| `/privacy` | Privacy Policy | Public | Includes Google data, 18+ policy, minimization, legal review notice. |
-| `/terms` | Terms of Service | Public | Includes lawful-use, sender responsibility, age requirement. |
-| `/abuse` | Anti-Abuse Policy | Public | Prohibited uses, enforcement, reporting, minors prohibition. |
+| `/privacy` | Privacy Policy | Public | Includes Google data, account and private-data deletion, retained records, minimization, legal review notice. |
+| `/terms` | Terms of Service | Public | Includes lawful use, sender responsibility, age requirement, and deletion choices. |
+| `/abuse` | Anti-Abuse Policy | Public | Prohibited uses, enforcement, reporting, minors prohibition, and retained sanitized abuse history. |
 | `/verify-eligibility` | Eligibility confirmation | Signed-in user expected | Redirects unauthenticated users to login through API status check. |
 | `/track/open/[token]` | Open pixel | Public signed token | Invalid tokens still return a pixel without DB update. Advances only `SENT` recipients. |
 | `/track/click/[token]` | Click redirect | Public signed token | Redirect is constrained to same-origin URL. Advances only `SENT`/`OPENED` recipients. |
@@ -643,7 +643,7 @@ All pages require admin authority. Old standalone routes redirect to their new w
 | `DELETE /api/suppressions/[id]` | Delete suppression | Verified owner | Manual/internal use. |
 | `GET /api/admin/users` | List users | Admin API | Admin only. |
 | `PATCH /api/admin/users/[id]` | Update controls/restrict/unrestrict | Admin API | Rate limited and audit logged. |
-| `DELETE /api/admin/users/[id]` | Delete account data | Admin API | Protected against self/admin deletion. |
+| `POST /api/admin/deletion-requests/[id]/approve` | Review and process a requested full deletion | Admin API | Idempotent claim; audit history retained. |
 | `GET /api/admin/users/search` | Search users for activity | Admin API | 60/min admin. |
 | `GET /api/admin/users/[id]/summary` | User activity summary | Admin API | Audit logs view action. |
 | `GET /api/admin/users/[id]/activity` | Paginated activity events | Admin API | Filters category/severity/type/search/date. |
@@ -1006,7 +1006,7 @@ Anti-abuse controls:
 Data minimization and retention signals in code/content:
 
 - The Privacy page states Sendloom does not collect exact date of birth, unnecessary location data, device fingerprints, or behavioral analytics from users who have not completed eligibility verification.
-- It also states incomplete/unverified onboarding records may be purged after 30 days. The current repository documents this policy language, but no automated purge worker was found in the inspected code.
+- The Privacy page makes no fixed-time onboarding or account-deletion purge promise; no automated 30-day onboarding purge worker was found in the inspected code.
 
 ## 15. Security Controls
 
@@ -1463,7 +1463,7 @@ Secrets rotation:
 - Click tracking depends on links being generated through same-origin tracking URLs; current code mainly shows the route and token support.
 - Finder is on hold in the normal UI. Its authenticated APIs remain callable, and any direct legacy use still depends on a saved user Hunter key and Hunter's limits/data; the UI hold itself is not an API disablement.
 - Suppression backend exists, but the operator suppression UI is hidden and `/suppressions` redirects to `/workspace`.
-- Public legal pages include retention/minimization language, but no automated 30-day purge worker was found in the current code.
+- Public legal pages avoid a fixed onboarding purge promise because no automated 30-day cleanup worker was found in the current code.
 - Old historical audit logs may not include newer actor/category/severity/IP/user-agent fields.
 - Local filesystem uploads are not suitable for durable production storage on ephemeral hosts.
 - The app workspace is intentionally blocked on compact touch/mobile layouts.
@@ -1493,7 +1493,7 @@ Grounded future work that is not currently claimed as done:
 - Add sender reputation guidance and pre-launch capacity recommendations based on historical Gmail throttling.
 - Add better retry controls, including retry-by-failure-category and retry preview before action.
 - Add team/workspace support if multi-seat collaboration becomes a goal.
-- Add explicit data-retention cleanup jobs for unverified accounts if the privacy policy retention language becomes an enforceable product requirement.
+- Define and implement an onboarding-record cleanup schedule before publishing any fixed purge timeframe.
 - Add R2 object lifecycle policies and admin storage diagnostics.
 - Add production smoke tests for cron, Gmail OAuth, R2, Redis, and database after deployment.
 - Add legal review and counsel-approved policy text before relying on policy pages in regulated contexts.
@@ -3439,3 +3439,19 @@ both the old and proposed address during historical repair. Dry-run performs no
 writes; `--apply` is mandatory to mutate. The old
 `repair-discover-person-identities.ts` entry point delegates to this command;
 per-person web identity enrichment is no longer part of Discover normalization.
+
+## 32. Account deletion and admin review
+
+`/account` is a centered settings workspace with four disclosures: Account information, Connected Gmail senders, Password, and Delete account. The expanded deletion section explains the two scopes, links to `/privacy` and `/terms`, uses selectable choices and a second destructive confirmation, and shows pending or processing status when applicable. Account-only deletion immediately writes a PII-free `User` tombstone because private workspace relations require a stable owner. The service revokes sessions, clears password/Google/magic-link/Hunter credentials and profile fields, removes the profile photo, strips connected Gmail OAuth credentials and sender identity, cancels active sends, and preserves outreach rows. The session guard rejects `deletedAt` accounts; the send worker checks the same flag before sending. A Resend farewell email is attempted after the database commit using a stable idempotency key.
+
+Full deletion creates a durable `AccountDeletionRequest` (`PENDING_REVIEW`, `PROCESSING`, `COMPLETED`, `REJECTED`, `CANCELLED`, `FAILED`) with a unique nullable `activeUserId` to prevent duplicate active requests. The request-received Resend email uses a stable key. The Account page shows its status and allows cancellation only while pending. The Users workspace links to a 20-row server-paginated, filterable review queue and detail page with counts for sequences, imports, templates, private Discover searches, senders, and attachments. The Overview Needs attention list includes pending requests. Only admins can approve or reject. Rejection requires a note and creates an audit event. Approval atomically claims the request, disables the account and records an audit event before server-side cleanup. The old direct admin deletion endpoint and control were removed because they deleted audit history and bypassed review.
+
+The policy in `src/services/account-deletion.ts` classifies records as DELETE, ANONYMIZE, or PRESERVE. The full purge removes user-owned campaigns/runs/jobs, inbound replies, provider events tied to those jobs, SendLedger, imports/columns/rows, mappings, templates, senders, suppressions, attachment assets, notifications, Hunter searches, private Discover searches/expansions/allocations, private prospects/companies/positions, and user-specific notice/legal/product-update delivery rows. It never removes `DiscoverPublicPerson`, `DiscoverProviderBatch`, shared caches, shared title intelligence, global System Notices, Product Updates, or legal notices. Account-only deletion preserves the private workspace records but strips account and sender identity and credentials.
+
+`AccountDeletionObject` persists the user's import paths, attachment keys, snapshot attachment keys, and profile photo key before database purge. Each R2/local object deletion is idempotent and marked complete individually. Database purge uses explicit ordered deletes rather than relying on cascades alone. If storage or database cleanup fails, the request becomes `FAILED` with a sanitized reason; an admin can retry it. A `PROCESSING` request older than 24 hours can also be reclaimed after a crash. Completed and rejected requests cannot execute again. Completion mail is attempted through Sendloom's Resend infrastructure after private cleanup and before final email anonymization; mail failure never restores data.
+
+AuditLog rows are never deleted. Before account identity is removed, both modern `actorUserId` and legacy `actorEmail` matches are located, as are rows whose free text or JSON contains the old email. Action, category, severity, timestamp, and safe entity type remain; direct identity, names, message, metadata, IP, user agent, and matching entity ID are cleared. A stable deleted-account label can correlate the former actor. Incident reports retain their pseudonym but lose encrypted reversible reporter references and free-text notes. User-specific delivery receipts are removed so a tombstone cannot receive future System Notices, Product Updates, or legal mail; the global content and processing design are unchanged.
+
+The additive migration is `20261002120000_account_deletion_workflow`. Public routes: `GET/POST /api/account/deletion`, `POST /api/account/deletion/cancel`. Admin routes: `GET /api/admin/deletion-requests`, `GET /api/admin/deletion-requests/[id]`, `POST /api/admin/deletion-requests/[id]/approve`, `POST /api/admin/deletion-requests/[id]/reject`. CSRF middleware protects mutations, rate limits apply, and admin guards protect all review routes. The HTML/text transactional messages are “Sorry to see you go 💚”, “We've received your deletion request”, and “Your Sendloom deletion is complete”.
+
+The public Terms and Privacy Policy now explain account-only retention, the reviewed full-data purge, shared public versus private Discover data, stored-object cleanup, and sanitized audit/security records. The FAQ answers the common deletion questions; Anti-Abuse clarifies retained sanitized enforcement history. The three materially changed policies use version `2026-10-02`, last updated October 2, 2026, and the shared `2026-10-02-account-deletion` release group. The existing legal notification processor detects content hashes and, after deployment to an enabled production environment, groups changed policies into one account-service notice. Historical releases and recipient records are not rewritten. The eligibility API still writes its existing `policyVersion: "1.0"` and acceptance timestamps; the app checks those timestamps, so this legal release does not by itself send existing users through a new acceptance gate. Qualified counsel should review final wording before production release.

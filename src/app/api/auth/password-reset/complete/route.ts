@@ -82,11 +82,12 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const user = await prisma.user.findUnique({
       where: { id: consumed.grant.userId },
-      select: { id: true, email: true, isAdmin: true, passwordHash: true }
+      select: { id: true, email: true, isAdmin: true, passwordHash: true, deletedAt: true }
     });
     if (
       !user ||
       user.isAdmin ||
+      user.deletedAt ||
       normalizeUserEmail(user.email) !== consumed.grant.normalizedEmail
     ) {
       return expiredResponse();
@@ -112,6 +113,7 @@ export async function POST(request: Request): Promise<Response> {
         id: user.id,
         email: user.email,
         isAdmin: false,
+        deletedAt: null,
         passwordHash: user.passwordHash
       },
       data: {

@@ -345,6 +345,7 @@ describe("POST /api/auth/password-reset/complete", () => {
         id: user.id,
         email: user.email,
         isAdmin: false,
+        deletedAt: null,
         passwordHash: user.passwordHash
       },
       data: {
@@ -377,6 +378,17 @@ describe("POST /api/auth/password-reset/complete", () => {
     expect(mocks.consumeGrant).toHaveBeenCalledWith(resetGrant);
     expect(mocks.verifyPassword).toHaveBeenCalledWith("old-password-value", user.passwordHash);
     expect(mocks.createPasswordHash).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a deleted account through an outstanding reset grant", async () => {
+    mocks.findUnique.mockResolvedValueOnce({ ...user, deletedAt: new Date() });
+    const response = await completeReset(jsonRequest("/api/auth/password-reset/complete", {
+      resetGrant,
+      newPassword: "new-password-value",
+      confirmPassword: "new-password-value"
+    }));
+    expect(response.status).toBe(410);
     expect(mocks.updateMany).not.toHaveBeenCalled();
   });
 

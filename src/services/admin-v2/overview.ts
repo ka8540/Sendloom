@@ -24,6 +24,7 @@ export function deriveAttention(input: {
   failedRuns: number;
   failedNotices: number;
   failedUpdates: number;
+  pendingDeletions?: number;
 }): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const [name, check] of Object.entries(input.health.checks)) {
@@ -69,6 +70,14 @@ export function deriveAttention(input: {
       href: "/admin/communications/product-updates",
       tone: "warning",
     });
+  if (input.pendingDeletions)
+    items.push({
+      id: "deletion-requests",
+      label: `${input.pendingDeletions} deletion request${input.pendingDeletions === 1 ? "" : "s"} awaiting review`,
+      detail: "Review account and outreach deletion requests",
+      href: "/admin/users/deletion-requests",
+      tone: "warning",
+    });
   return items.slice(0, 8);
 }
 
@@ -93,6 +102,7 @@ export async function getAdminOverview({
     failedRuns,
     failedNotices,
     failedUpdates,
+    pendingDeletions,
     runStates,
     noticeStates,
     updateStates,
@@ -103,9 +113,9 @@ export async function getAdminOverview({
     recentSearches,
   ] = await Promise.all([
     getSystemHealth(),
-    prisma.user.count(),
+    prisma.user.count({ where: { deletedAt: null } }),
     prisma.user.count({
-      where: { isAdmin: false, lastSeenAt: { gte: dayAgo } },
+      where: { isAdmin: false, deletedAt: null, lastSeenAt: { gte: dayAgo } },
     }),
     prisma.sendLedger.count({ where: { sentAt: { gte: dayAgo } } }),
     prisma.incidentReport.findMany({
@@ -129,6 +139,7 @@ export async function getAdminOverview({
     prisma.campaignRun.count({ where: { status: "FAILED" } }),
     prisma.systemNotice.count({ where: { status: "FAILED" } }),
     prisma.productUpdateBroadcast.count({ where: { status: "FAILED" } }),
+    prisma.accountDeletionRequest.count({ where: { status: "PENDING_REVIEW" } }),
     prisma.campaignRun.groupBy({
       by: ["status"],
       _count: { _all: true },
@@ -185,6 +196,7 @@ export async function getAdminOverview({
       },
     }),
     prisma.user.findMany({
+      where: { deletedAt: null },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: (accountsPage - 1) * OVERVIEW_FEED_PAGE_SIZE,
       take: OVERVIEW_FEED_PAGE_SIZE,
@@ -197,6 +209,7 @@ export async function getAdminOverview({
     failedRuns,
     failedNotices,
     failedUpdates,
+    pendingDeletions,
   });
   const unhealthyChecks = Object.values(health.checks).filter(
     (check) => check.status === "down" || check.status === "missing",
@@ -228,7 +241,8 @@ export async function getAdminOverview({
         attentionIncidentCount +
         Number(failedRuns > 0) +
         Number(failedNotices > 0) +
-        Number(failedUpdates > 0),
+        Number(failedUpdates > 0) +
+        Number(pendingDeletions > 0),
     },
     attention,
     pulse,

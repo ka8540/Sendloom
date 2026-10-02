@@ -29,8 +29,8 @@ describe("account page (server component)", () => {
   });
 });
 
-describe("account dashboard — profile + senders", () => {
-  it("renders the identity card: avatar initial, email, integrated account type", () => {
+describe("account settings — profile + senders", () => {
+  it("renders read-only account details and photo controls in the information disclosure", () => {
     expect(DASHBOARD).toContain("accountInitial(profile)");
     expect(DASHBOARD).toContain("{profile.name ?? profile.email}");
     expect(DASHBOARD).toContain("ACCOUNT_TYPE_LABELS[profile.accountType]");
@@ -69,9 +69,9 @@ describe("account dashboard — profile + senders", () => {
 describe("account dashboard — sender removal", () => {
   it("hides the Remove action when only one sender exists, with helper text below the list", () => {
     // No disabled pill in the row — the action only renders when removal is allowed.
-    expect(DASHBOARD).toContain("{canRemoveSenders ? (");
+    expect(DASHBOARD).toContain("{canRemoveSenders ? <button");
     expect(DASHBOARD).not.toContain("disabled={!canRemoveSenders}");
-    expect(DASHBOARD).toContain("{!canRemoveSenders ? (");
+    expect(DASHBOARD).toContain("{!canRemoveSenders ? <p");
     expect(DASHBOARD).toContain("Connect another Gmail account before removing this sender.");
   });
 
@@ -102,9 +102,9 @@ describe("account dashboard — sender removal", () => {
 
 describe("account dashboard — password", () => {
   it("shows a change form for password users and a set form for google accounts", () => {
-    expect(DASHBOARD).toContain('hasPassword ? "Password" : "Set a password"');
+    expect(DASHBOARD).toContain('title="Password"');
     expect(DASHBOARD).toContain('hasPassword ? "Update password" : "Set password"');
-    expect(DASHBOARD).toContain("{hasPassword ? (");
+    expect(DASHBOARD).toContain("{hasPassword ? <div");
   });
 
   it("validates before submit using the shared pure validator", () => {

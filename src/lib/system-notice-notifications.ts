@@ -195,7 +195,7 @@ export function createPrismaSystemNoticeStore(client: PrismaClient): SystemNotic
         }
 
         const users = await getSystemNoticeAccountRecipientPage(
-          (args) => tx.user.findMany(args) as Promise<Array<{ id: string; email: string }>>,
+          (args) => tx.user.findMany({ ...args, where: { ...args.where, deletedAt: null } }) as Promise<Array<{ id: string; email: string }>>,
           { cursor: notice.recipientCursor, take }
         );
         const created = users.length
@@ -392,7 +392,7 @@ export function createPrismaSystemNoticeStore(client: PrismaClient): SystemNotic
           where: { noticeId, status: SystemNoticeRecipientStatus.PERMANENT_FAILURE }
         }),
         notice && !notice.recipientsMaterializedAt
-          ? client.user.count({ where: notice.recipientCursor ? { id: { gt: notice.recipientCursor } } : undefined })
+          ? client.user.count({ where: { deletedAt: null, ...(notice.recipientCursor ? { id: { gt: notice.recipientCursor } } : {}) } })
           : Promise.resolve(0)
       ]);
       return {
