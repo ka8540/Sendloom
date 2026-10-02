@@ -1,14 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/auth";
-
-import { ProductUpdatesWorkspace } from "./product-updates-workspace";
-import styles from "../system-notices/system-notices.module.css";
-
-export default async function AdminProductUpdatesPage() {
+export default async function UpdatesRedirect() {
   await requireAdminUser();
-
-  return (
-    <div className={styles.page}>
-      <ProductUpdatesWorkspace />
-    </div>
-  );
+  redirect("/admin/communications/product-updates");
 }

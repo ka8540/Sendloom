@@ -1,32 +1,15 @@
-import { AdminRestrictionsSection } from "@/app/(app)/admin/admin-workspace";
+import { redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/auth";
-import { listAdminUsers } from "@/services/admin";
-
-import styles from "@/app/(app)/admin/page.module.css";
-
-export default async function AdminRestrictionsPage({
+export default async function RestrictionsRedirect({
   searchParams,
 }: {
   searchParams: Promise<{ userId?: string }>;
 }) {
-  const [admin, users, resolvedParams] = await Promise.all([
-    requireAdminUser(),
-    listAdminUsers(),
-    searchParams,
-  ]);
-
-  return (
-    <div className={styles.page}>
-      <section className={`${styles.hero} card`}>
-        <h1 className={styles.heroTitle}>Restrictions</h1>
-        <p className="muted">Manage account-level restrictions and access controls safely.</p>
-      </section>
-
-      <AdminRestrictionsSection
-        users={users}
-        adminId={admin.id}
-        initialUserId={resolvedParams.userId ?? null}
-      />
-    </div>
+  await requireAdminUser();
+  const p = await searchParams;
+  redirect(
+    p.userId
+      ? `/admin/users/${encodeURIComponent(p.userId)}?tab=access`
+      : "/admin/users?status=restricted",
   );
 }

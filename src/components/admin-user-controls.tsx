@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
-import styles from "@/app/(app)/admin/page.module.css";
+import styles from "@/components/admin-v2/admin-user-controls.module.css";
 
 const DELETE_USER_ERROR = "This user could not be deleted. Please try again.";
 
@@ -95,6 +95,7 @@ export function AdminUserControls(props: AdminUserControlsProps) {
 
       setDeleteConfirmOpen(false);
       setMessage("User deleted.");
+      router.push("/admin/users");
       router.refresh();
     });
   }
@@ -145,8 +146,11 @@ export function AdminUserControls(props: AdminUserControlsProps) {
           onClick={() => saveControls(true)}
           disabled={!props.isLoggedIn || isSaving || isDeleting}
         >
-          End session
+          Revoke sessions
         </button>
+      </div>
+
+      <div className={styles.dangerZone}><h3>Danger zone</h3><p>Delete this account and its stored data permanently.</p>
         <button
           className={styles.deleteButton}
           type="button"

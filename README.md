@@ -342,9 +342,13 @@ This URL redirects to `/prospects` on the server. The Hunter-backed Finder imple
 
 Profile card (email, account type, created/last-login/last-seen), email-verified password set or change, and the connected-sender list with a remove action. The password form verifies the current password when one exists, then requires the emailed OTP before committing the new hash and rotating the session. Sender removal is refused server-side when the sender is the only one or when active/scheduled sequences reference it.
 
-### Admin — `/admin`, `/admin/users`, `/admin/restrictions`, `/admin/system-health`, `/admin/activity`, `/admin/incidents`
+### Admin command center
 
-Aggregate metrics, per-user inspection and restrictions, live runtime health checks, audit-log search, and incident triage.
+Admin navigation has six workspaces: **Overview** (`/admin`), **Users** (`/admin/users` and `/admin/users/[id]`), **Analytics** (`/admin/analytics`), **Operations** (`/admin/operations`), **Communications** (`/admin/communications`), and **Audit & Security** (`/admin/audit`). Overview combines health, confirmed sends from `SendLedger`, attention items backed by current checks or stored failures, product pulse, live run counts, and recent admin actions. User search, filters, and pagination use server queries; account controls and restriction actions live on the user's Access tab. Analytics uses persisted adoption and outreach data with 7/30/90-day ranges.
+
+Operations has Platform, Sending, Discover, and Incidents tabs. Platform reuses the existing runtime health checks. Incident triage continues to use the privacy-preserving incident service. Communications groups Product Updates, System Notices, and read-only Legal Releases. Product Updates and System Notices retain their separate delivery processors, recipient ledgers, exact preview, and confirmation flows. Legal Releases monitor immutable policy delivery; they do not edit policy text. The admin sidebar shows only the six workspaces, while child pages are reached through workspace tabs.
+
+Old admin URLs remain as redirects: `/admin/restrictions` → `/admin/users?status=restricted` (or a specified user's Access tab), `/admin/system-health` → `/admin/operations`, `/admin/activity` → `/admin/audit` (or a specified user's Activity tab), `/admin/incidents` → `/admin/operations/incidents`, `/admin/system-notices` → `/admin/communications/system-notices`, and `/admin/product-updates` → `/admin/communications/product-updates`. The existing admin API URLs remain unchanged.
 
 ## Main public pages
 
@@ -459,7 +463,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 
 ### Admin routes
 
-`/admin`, `/admin/users`, `/admin/restrictions`, `/admin/system-health`, `/admin/system-notices`, `/admin/activity`, `/admin/incidents`.
+`/admin`, `/admin/users`, `/admin/users/[id]`, `/admin/analytics`, `/admin/operations`, `/admin/operations/sending`, `/admin/operations/discover`, `/admin/operations/incidents`, `/admin/communications`, `/admin/communications/product-updates`, `/admin/communications/system-notices`, `/admin/communications/legal`, `/admin/audit`. Legacy route redirects are listed in [Admin command center](#admin-command-center).
 
 ## API summary
 
@@ -787,7 +791,7 @@ These are transactional account/service notices and remain isolated from marketi
 
 System Notices are separate from legal-policy releases and incident reports. They are transactional operational emails for maintenance, degraded performance, disruptions, recovery updates, and general service communications.
 
-1. An administrator opens **Admin → System Notices** and creates a draft.
+1. An administrator opens **Admin → Communications → System Notices** and creates a draft.
 2. The administrator chooses the notice type, plain-text content, affected area, optional impact window, and IANA display timezone.
 3. **Preview exact email** renders the same HTML/text pair used by production delivery. Preview does not create recipient rows or call Resend.
 4. The administrator chooses **Send now** or **Schedule**. Scheduled timestamps are stored as UTC instants and are never processed early; with the five-minute external-scheduler cadence, delivery normally begins at or shortly after the selected instant.
@@ -812,7 +816,7 @@ Use the same strong `CRON_SECRET` value in the external scheduler and the Vercel
 
 Product Updates are admin-authored feature-announcement emails. They are not an in-app feed, notification-bell event, dashboard banner, or user-facing “What's New” page.
 
-1. An administrator opens **Admin → Product Updates** and creates a draft with a subject, headline, intro, and one to five feature blocks.
+1. An administrator opens **Admin → Communications → Product Updates** and creates a draft with a subject, headline, intro, and one to five feature blocks.
 2. Each feature has a title and description plus an optional paired CTA label and safe authenticated Sendloom path.
 3. **Preview exact email** uses the same pure HTML/text renderer as delivery and cannot create recipients or call Resend.
 4. **Send now** requires typing `SEND TO ALL USERS`; **Schedule** stores the selected local time as a UTC instant with its IANA timezone.
