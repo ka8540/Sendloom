@@ -62,6 +62,7 @@ export async function listUsersWorkspace(input: {
   const query = input.query.trim().slice(0, 120);
   const where: Prisma.UserWhereInput = {
     AND: [
+      { deletedAt: null },
       userStatusWhere(input.status),
       ...(query
         ? [
@@ -76,10 +77,10 @@ export async function listUsersWorkspace(input: {
     ],
   };
   const [total, active, attention, restricted, count] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: userStatusWhere("active") }),
-    prisma.user.count({ where: userStatusWhere("attention") }),
-    prisma.user.count({ where: userStatusWhere("restricted") }),
+    prisma.user.count({ where: { deletedAt: null } }),
+    prisma.user.count({ where: { AND: [{ deletedAt: null }, userStatusWhere("active")] } }),
+    prisma.user.count({ where: { AND: [{ deletedAt: null }, userStatusWhere("attention")] } }),
+    prisma.user.count({ where: { AND: [{ deletedAt: null }, userStatusWhere("restricted")] } }),
     prisma.user.count({ where }),
   ]);
   const page = normalizeAdminPage(requestedPage, count, ADMIN_USERS_PAGE_SIZE);

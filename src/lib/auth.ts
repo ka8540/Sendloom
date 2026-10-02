@@ -159,6 +159,7 @@ export async function getSession() {
     select: {
       email: true,
       eligibilityBlockedAt: true,
+      deletedAt: true,
       sessionExpiresAt: true,
       sessionIssuedAt: true,
       lastSeenAt: true
@@ -169,7 +170,7 @@ export async function getSession() {
     return null;
   }
 
-  if (user.eligibilityBlockedAt) {
+  if (user.eligibilityBlockedAt || user.deletedAt) {
     return null;
   }
 

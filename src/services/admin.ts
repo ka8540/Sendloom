@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/db";
 import { isAdminUser } from "@/lib/auth";
 import { recordAuditEvent } from "@/lib/audit";
-import { deleteObject } from "@/lib/storage";
 
 export class AdminActionError extends Error {
   status: number;
@@ -11,32 +10,6 @@ export class AdminActionError extends Error {
     this.name = "AdminActionError";
     this.status = status;
   }
-}
-
-function extractAttachmentPaths(templateSnapshot: unknown) {
-  if (!templateSnapshot || typeof templateSnapshot !== "object" || Array.isArray(templateSnapshot)) {
-    return [] as string[];
-  }
-
-  const attachments = (templateSnapshot as { attachments?: unknown }).attachments;
-  if (!Array.isArray(attachments)) {
-    return [] as string[];
-  }
-
-  return attachments
-    .map((attachment) => {
-      if (!attachment || typeof attachment !== "object" || Array.isArray(attachment)) {
-        return null;
-      }
-
-      const storagePath = (attachment as { storagePath?: unknown }).storagePath;
-      return typeof storagePath === "string" && storagePath.length > 0 ? storagePath : null;
-    })
-    .filter((value): value is string => Boolean(value));
-}
-
-function getUniqueFilePaths(paths: string[]) {
-  return Array.from(new Set(paths.filter(Boolean)));
 }
 
 export async function listAdminUsers() {
@@ -205,131 +178,6 @@ export async function updateUserAdminControls(args: {
   });
 
   return updatedUser;
-}
-
-export async function deleteUserAccountData(args: {
-  actorEmail: string;
-  actorUserId: string;
-  userId: string;
-}) {
-  const targetUser = await prisma.user.findUnique({
-    where: { id: args.userId },
-    select: {
-      id: true,
-      email: true,
-      isAdmin: true,
-      imports: {
-        select: {
-          id: true,
-          storagePath: true
-        }
-      },
-      campaigns: {
-        select: {
-          id: true,
-          templateSnapshot: true
-        }
-      },
-      _count: {
-        select: {
-          imports: true,
-          mappings: true,
-          templates: true,
-          campaigns: true,
-          senderProfiles: true,
-          suppressions: true
-        }
-      }
-    }
-  });
-
-  if (!targetUser) {
-    throw new AdminActionError("User not found.", 404);
-  }
-
-  if (targetUser.id === args.actorUserId) {
-    throw new AdminActionError("For safety, self-deletion is blocked from the admin dashboard.", 403);
-  }
-
-  if (isAdminUser(targetUser)) {
-    throw new AdminActionError("Admin accounts cannot be deleted from this dashboard.", 403);
-  }
-
-  const importKeys = getUniqueFilePaths(
-    targetUser.imports.map((entry) => entry.storagePath).filter((value): value is string => Boolean(value))
-  );
-  // Deduped attachment assets are shared only within this user's account, so
-  // deleting every key on account wipe is safe. The asset table also covers
-  // objects whose snapshot references were edited away.
-  const attachmentAssets = await prisma.attachmentAsset.findMany({
-    where: { userId: targetUser.id },
-    select: { storageKey: true }
-  });
-  const attachmentKeys = getUniqueFilePaths([
-    ...targetUser.campaigns.flatMap((campaign) => extractAttachmentPaths(campaign.templateSnapshot)),
-    ...attachmentAssets.map((asset) => asset.storageKey)
-  ]);
-
-  await prisma.$transaction(async (tx) => {
-    await tx.campaign.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.mapping.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.template.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.import.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.suppression.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.senderProfile.deleteMany({
-      where: { userId: targetUser.id }
-    });
-
-    await tx.auditLog.deleteMany({
-      where: {
-        OR: [{ actorEmail: targetUser.email }, { actorUserId: targetUser.id }]
-      }
-    });
-
-    await tx.user.delete({
-      where: { id: targetUser.id }
-    });
-  });
-
-  await Promise.all([
-    ...importKeys.map((storageKey) => deleteObject("imports", storageKey).catch(() => undefined)),
-    ...attachmentKeys.map((storageKey) => deleteObject("attachments", storageKey).catch(() => undefined))
-  ]);
-
-  await recordAuditEvent({
-    actor: { id: args.actorUserId, email: args.actorEmail },
-    action: "admin.user.delete_all_data",
-    category: "ADMIN",
-    severity: "SECURITY",
-    target: { type: "user", id: targetUser.id, name: targetUser.email },
-    message: `Wiped all account data for ${targetUser.email}.`,
-    metadata: {
-      deletedCounts: targetUser._count,
-      deletedFiles: importKeys.length + attachmentKeys.length
-    },
-    critical: true
-  });
-
-  return {
-    id: targetUser.id,
-    email: targetUser.email,
-    deleted: true
-  };
 }
 
 export async function restrictUserAccount(args: {

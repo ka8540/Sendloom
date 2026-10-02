@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Camera, KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import { AccountDeletionSection } from "@/components/account/account-deletion-section";
 import { useErrorToast } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import {
@@ -610,6 +611,8 @@ export function AccountDashboard({
           )}
         </section>
       </div>
+
+      <AccountDeletionSection />
 
       <AppConfirmDialog
         open={pendingRemoval !== null}

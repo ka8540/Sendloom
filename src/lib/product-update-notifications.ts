@@ -185,7 +185,7 @@ export function createPrismaProductUpdateStore(client: PrismaClient): ProductUpd
         }
 
         const users = await getProductUpdateAccountRecipientPage(
-          (args) => tx.user.findMany(args) as Promise<Array<{ id: string; email: string }>>,
+          (args) => tx.user.findMany({ ...args, where: { ...args.where, deletedAt: null } }) as Promise<Array<{ id: string; email: string }>>,
           { cursor: broadcast.recipientCursor, take }
         );
         const created = users.length
@@ -382,7 +382,7 @@ export function createPrismaProductUpdateStore(client: PrismaClient): ProductUpd
           where: { broadcastId, status: ProductUpdateBroadcastRecipientStatus.PERMANENT_FAILURE }
         }),
         broadcast && !broadcast.recipientsMaterializedAt
-          ? client.user.count({ where: broadcast.recipientCursor ? { id: { gt: broadcast.recipientCursor } } : undefined })
+          ? client.user.count({ where: { deletedAt: null, ...(broadcast.recipientCursor ? { id: { gt: broadcast.recipientCursor } } : {}) } })
           : Promise.resolve(0)
       ]);
       return {

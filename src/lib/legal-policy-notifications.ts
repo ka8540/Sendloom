@@ -387,7 +387,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
         if (!release || release.recipientsMaterializedAt) return { created: 0, complete: true };
 
         const users = await getAccountRecipientPage(
-          (args) => tx.user.findMany(args) as Promise<Array<{ id: string; email: string }>>,
+          (args) => tx.user.findMany({ ...args, where: { ...args.where, deletedAt: null } }) as Promise<Array<{ id: string; email: string }>>,
           { cursor: release.recipientCursor, take }
         );
         const noticeIds = (
@@ -611,7 +611,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
           where: { releaseId, status: LegalPolicyNoticeRecipientStatus.FAILED_PERMANENT }
         }),
         release && !release.recipientsMaterializedAt
-          ? client.user.count({ where: release.recipientCursor ? { id: { gt: release.recipientCursor } } : undefined })
+          ? client.user.count({ where: { deletedAt: null, ...(release.recipientCursor ? { id: { gt: release.recipientCursor } } : {}) } })
           : Promise.resolve(0)
       ]);
       return {

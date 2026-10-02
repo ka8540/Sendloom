@@ -48,6 +48,7 @@ export default async function UsersPage({
       <AdminPageHeader
         title="Users"
         description="Find accounts, review usage, and manage access from each user workspace."
+        actions={<Link className="button secondary" href="/admin/users/deletion-requests">Deletion requests</Link>}
       />
       <AdminMetricStrip
         items={[

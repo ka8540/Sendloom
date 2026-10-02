@@ -1,0 +1,11 @@
+.panel{padding:1.4rem;border:1px solid color-mix(in srgb,#b65052 30%,var(--line));border-radius:16px;background:var(--surface)}
+.panel h2{margin:0 0 .35rem;font-size:1.2rem}
+.panel p{color:var(--muted);line-height:1.55}
+.actions{display:flex;align-items:flex-start;gap:1.5rem;flex-wrap:wrap;margin-top:1rem}
+.reject{display:grid;gap:.35rem;flex:1;min-width:min(100%,20rem)}
+.reject label{color:var(--muted);font-size:.82rem;font-weight:700}
+.rejectControls{display:flex;align-items:flex-end;gap:.7rem;flex-wrap:wrap}
+.rejectControls textarea{flex:1;min-width:min(100%,20rem);min-height:2.6rem;padding:.65rem;border:1px solid var(--line);border-radius:10px;background:var(--surface-muted);color:var(--text);font:inherit}
+.approve{padding:.7rem 1rem;border:1px solid #a74348;border-radius:999px;background:#a74348;color:white;font:inherit;font-weight:700;cursor:pointer}
+.approve:hover{background:#853239}
+.error{color:#b65052!important}

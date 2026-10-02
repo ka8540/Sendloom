@@ -73,6 +73,7 @@ describe("Admin workspace data services", () => {
         take: 20,
         where: {
           AND: [
+            { deletedAt: null },
             expect.objectContaining({
               OR: expect.arrayContaining([{ restrictedAt: { not: null } }]),
             }),

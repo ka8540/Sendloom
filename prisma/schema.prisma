@@ -169,6 +169,7 @@ model User {
   profilePhotoKey                  String?
   profilePhotoContentType          String?
   profilePhotoUpdatedAt            DateTime?
+  deletedAt                        DateTime?
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
   senderProfiles                   SenderProfile[]
@@ -189,9 +190,55 @@ model User {
   createdProductUpdateBroadcasts   ProductUpdateBroadcast[]          @relation("ProductUpdateBroadcastCreator")
   productUpdateBroadcastRecipients ProductUpdateBroadcastRecipient[] @relation("ProductUpdateBroadcastRecipientUser")
   notifications                    AppNotification[]
+  deletionRequests                 AccountDeletionRequest[] @relation("DeletionSubject")
+  reviewedDeletionRequests         AccountDeletionRequest[] @relation("DeletionReviewer")
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
+}
+
+enum AccountDeletionStatus {
+  PENDING_REVIEW
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELLED
+  FAILED
+}
+
+model AccountDeletionRequest {
+  id                String                @id @default(cuid())
+  userId            String
+  // Non-null only while a request is active. Unique across concurrent tabs.
+  activeUserId      String?               @unique
+  status            AccountDeletionStatus @default(PENDING_REVIEW)
+  requestedAt       DateTime              @default(now())
+  reviewedAt        DateTime?
+  reviewedByAdminId String?
+  reviewNote        String?
+  processingStartedAt DateTime?
+  completedAt       DateTime?
+  failureReason     String?
+  requestEmailSentAt DateTime?
+  completionEmailSentAt DateTime?
+  user              User                  @relation("DeletionSubject", fields: [userId], references: [id], onDelete: Restrict)
+  reviewedByAdmin   User?                 @relation("DeletionReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  objects           AccountDeletionObject[]
+
+  @@index([status, requestedAt])
+  @@index([userId, requestedAt])
+}
+
+model AccountDeletionObject {
+  id        String @id @default(cuid())
+  requestId String
+  bucket    String
+  key       String
+  deletedAt DateTime?
+  request   AccountDeletionRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, bucket, key])
+  @@index([requestId, deletedAt])
 }
 
 // Account-scoped product events shown only in the authenticated in-app bell.
