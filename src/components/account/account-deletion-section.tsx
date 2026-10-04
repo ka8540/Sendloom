@@ -11,7 +11,7 @@ import styles from "./account-deletion-section.module.css";
 type DeletionChoice = "ACCOUNT_ONLY" | "ACCOUNT_AND_OUTREACH";
 type DeletionRequest = { id: string; status: string; requestedAt: string; completedAt: string | null };
 
-export function AccountDeletionSection({ onKeepUsing }: { onKeepUsing: () => void }) {
+export function AccountDeletionSection() {
   const [request, setRequest] = useState<DeletionRequest | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [choiceOpen, setChoiceOpen] = useState(false);
@@ -109,7 +109,7 @@ export function AccountDeletionSection({ onKeepUsing }: { onKeepUsing: () => voi
             <div><BarChart3 aria-hidden="true" /><span><strong>Analytics</strong><small>Track sends, replies, and performance.</small></span></div>
             <div><Mail aria-hidden="true" /><span><strong>Gmail</strong><small>Send from connected Gmail accounts.</small></span></div>
           </div>
-          <div className={styles.actions}><button type="button" className="button" onClick={onKeepUsing}>Keep using Sendloom</button><button ref={continueRef} type="button" className={styles.continue} onClick={() => { setError(null); setSelection(null); setChoiceOpen(true); }} disabled={!loaded}>Continue to deletion <ArrowRight aria-hidden="true" /></button></div>
+          <div className={styles.actions}><button ref={continueRef} type="button" className={styles.continue} onClick={() => { setError(null); setSelection(null); setChoiceOpen(true); }} disabled={!loaded}>Delete account <ArrowRight aria-hidden="true" /></button></div>
           <p className={styles.legalLinks}>How deleted account data is handled: <Link href="/privacy">Privacy Policy</Link> · <Link href="/terms">Terms of Service</Link></p>
         </div>
       )}
@@ -128,7 +128,7 @@ export function AccountDeletionSection({ onKeepUsing }: { onKeepUsing: () => voi
                 <span className={styles.optionCopy}><span className={styles.optionHeading}><strong>Delete my account and outreach data</strong><em>Requires review</em></span><span>Request permanent removal of private sequences, imports, templates, attachments, and Discover activity. An admin reviews the request before the irreversible purge.</span></span>
               </label>
             </div>
-            <div className={styles.modalActions}><button type="button" className="button secondary" onClick={closeChoices}>Cancel</button><button type="button" className={styles.modalContinue} disabled={!selection} onClick={() => { setChoice(selection); setChoiceOpen(false); }}>Continue <ArrowRight aria-hidden="true" /></button></div>
+            <div className={styles.modalActions}><div className={styles.cancelWrap}><button type="button" className={styles.cancelButton} aria-describedby={`${titleId}-cancel-tip`} onClick={closeChoices}>Cancel</button><span id={`${titleId}-cancel-tip`} className={styles.cancelTooltip} role="tooltip"><span aria-hidden="true">💚</span> Keep using Sendloom</span></div><button type="button" className={styles.modalContinue} disabled={!selection} onClick={() => { setChoice(selection); setChoiceOpen(false); }}>Continue <ArrowRight aria-hidden="true" /></button></div>
           </div>
         </div>, document.body
       ) : null}

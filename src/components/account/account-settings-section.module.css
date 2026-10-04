@@ -3,7 +3,7 @@
 .trigger:hover{background:var(--surface-hover)}
 .trigger:active{background:var(--surface-muted)}
 .trigger:focus-visible{position:relative;z-index:1;outline:2px solid var(--accent);outline-offset:-3px}
-.icon{display:grid;place-items:center;flex:none;width:2.65rem;height:2.65rem;border:1px solid var(--line);border-radius:12px;background:var(--surface-muted);color:var(--accent-strong)}
+.icon{display:grid;place-items:center;flex:none;width:2.65rem;height:2.65rem;border:1px solid var(--line);border-radius:50%;background:var(--surface-muted);color:var(--accent-strong)}
 .icon svg{width:1.15rem;height:1.15rem;stroke-width:1.9}
 .danger .icon{color:var(--error-toast-icon-color);background:var(--error-toast-icon-bg);border-color:color-mix(in srgb,var(--error-toast-icon-color) 18%,var(--line))}
 .copy{display:grid;gap:.23rem;min-width:0;flex:1}
