@@ -38,7 +38,7 @@ export function SessionControls({
   return (
     <div className="nav-footer">
       <div className="nav-footer-theme">
-        <DashboardThemeSwitch collapsed={collapsed} />
+        <DashboardThemeSwitch />
       </div>
       {utilityNav ? (
         <>

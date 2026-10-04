@@ -299,7 +299,7 @@ describe("session controls footer order", () => {
   });
 
   it("keeps the dashboard theme switch and logout controls intact", () => {
-    expect(SESSION_SOURCE).toContain("DashboardThemeSwitch collapsed={collapsed}");
+    expect(SESSION_SOURCE).toContain("<DashboardThemeSwitch />");
     expect(SESSION_SOURCE).toContain('className="nav-item nav-item-button"');
     expect(SESSION_SOURCE).toContain("Log out");
   });
