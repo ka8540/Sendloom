@@ -1,72 +1,111 @@
-.track {
-  box-sizing: border-box;
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.root {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  width: 124px;
+  height: 36px;
   flex: none;
-  width: 110px;
-  height: 38px;
-  padding: 1px;
+}
+
+.switchWrap,
+.placeholderTrack {
+  position: relative;
+  width: 80px;
+  height: 36px;
+  flex: none;
+}
+
+.track,
+.placeholderTrack {
+  --switch-width: 80px;
+  --switch-height: 36px;
+  --switch-thumb-size: 28px;
+  --switch-light-x: 4px;
+  --switch-dark-x: 44px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.track {
+  position: absolute;
+  inset: 0;
+}
+
+.placeholderTrack {
+  display: block;
+  border: 1px solid var(--line);
+}
+
+.sunSlot,
+.moonSlot {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.sunSlot {
+  left: 8px;
+}
+
+.moonSlot {
+  right: 8px;
+}
+
+.icon {
+  transition: all 200ms ease-out;
+}
+
+.active {
+  color: var(--text);
+  transform: scale(1.1);
+}
+
+.inactive {
+  color: color-mix(in srgb, var(--muted) 70%, transparent);
+  transform: scale(1);
+}
+
+.systemButton,
+.placeholderSystem {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-muted);
 }
 
-.thumb {
-  position: absolute;
-  left: 1px;
-  top: 1px;
-  width: calc((100% - 2px) / 3);
-  height: calc(100% - 2px);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-strong);
-  box-shadow: var(--elevation-1);
-  pointer-events: none;
-  transition: transform 210ms var(--ease-out);
-}
-
-.thumbLight {
-  transform: translateX(0);
-}
-
-.thumbSystem {
-  transform: translateX(100%);
-}
-
-.thumbDark {
-  transform: translateX(200%);
-}
-
-.option {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+.systemButton {
   color: var(--muted);
   cursor: pointer;
-  transition: color 210ms var(--ease-out);
+  transition: background-color 200ms ease-out, color 200ms ease-out;
 }
 
-.selected {
+.systemButton:hover {
+  background: var(--surface-hover);
+}
+
+.systemActive {
+  background: var(--accent-soft-strong);
   color: var(--text);
 }
 
-.option:focus-visible {
+.systemButton:focus-visible {
   outline: 2px solid var(--field-focus);
   outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .thumb,
-  .option {
+  .icon,
+  .systemButton {
     transition: none;
   }
 }
