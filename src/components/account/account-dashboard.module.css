@@ -3,7 +3,7 @@
 .loadError,.formError{margin:0;color:var(--error-toast-icon-color);font-size:.84rem;line-height:1.5}
 .loadError{padding:.8rem 1rem;border:1px solid color-mix(in srgb,var(--error-toast-icon-color) 26%,var(--line));border-radius:10px;background:var(--error-toast-icon-bg)}
 .profileRow{display:flex;align-items:center;gap:1rem;min-width:0}
-.avatar,.avatarImage{display:grid;place-items:center;flex:none;width:3.6rem;height:3.6rem;border-radius:14px;object-fit:cover;font-size:1.4rem;font-weight:750}
+.avatar,.avatarImage{display:grid;place-items:center;flex:none;width:3.6rem;height:3.6rem;border-radius:50%;object-fit:cover;font-size:1.4rem;font-weight:750}
 .avatar{background:var(--accent-soft);color:var(--accent-strong)}
 .avatarImage{border:1px solid var(--line)}
 .profileCopy{display:grid;gap:.2rem;min-width:0}
@@ -11,7 +11,7 @@
 .profileCopy>span{color:var(--muted);font-size:.78rem}
 .photoControls{display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.45rem}
 .photoInput{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.photoButton,.photoRemoveButton{display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .65rem;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-size:.78rem;font-weight:650;cursor:pointer;transition:background-color .18s ease,border-color .18s ease}
+.photoButton,.photoRemoveButton{display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .65rem;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text);font:inherit;font-size:.78rem;font-weight:650;cursor:pointer;transition:background-color .18s ease,border-color .18s ease}
 .photoButton svg{width:.9rem;height:.9rem}
 .photoButton:hover,.photoRemoveButton:hover{background:var(--surface-hover)}
 .photoButton:focus-visible,.photoRemoveButton:focus-visible,.removeButton:focus-visible,.addSenderRow:focus-visible,.reconnectLink:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -30,31 +30,31 @@
 .senderList{display:grid;gap:0;margin:0;padding:0;list-style:none}
 .senderRow{display:flex;align-items:center;gap:.8rem;min-width:0;padding:.85rem 0;border-bottom:1px solid var(--line)}
 .senderRow:first-child{padding-top:0}
-.senderTile{display:grid;place-items:center;flex:none;width:2.35rem;height:2.35rem;border-radius:9px;background:var(--accent-soft);color:var(--accent-strong)}
+.senderTile{display:grid;place-items:center;flex:none;width:2.35rem;height:2.35rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-strong)}
 .senderTile svg{width:1.08rem;height:1.08rem}
 .senderMain{display:grid;gap:.12rem;min-width:0;flex:1}
 .senderName{font-size:.86rem;font-weight:750;overflow-wrap:anywhere}
 .senderEmail,.senderMeta{font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
 .senderMeta{font-size:.72rem}
 .senderSide{display:flex;align-items:center;gap:.65rem;flex:none}
-.senderStatus{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;font-weight:650;white-space:nowrap}
+.senderStatus{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:999px;background:var(--surface-muted);font-size:.72rem;font-weight:650;white-space:nowrap}
 .statusOk{color:var(--accent-strong)}.statusWarn{color:var(--warning)}
 .statusDot{width:.4rem;height:.4rem;border-radius:50%;background:currentColor}
-.reconnectLink{color:var(--accent-strong);font-size:.77rem;font-weight:700;text-decoration:none}
-.reconnectLink:hover{text-decoration:underline}
-.removeButton{display:grid;place-items:center;width:2rem;height:2rem;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;transition:color .18s ease,background-color .18s ease}
+.reconnectLink{padding:.3rem .65rem;border:1px solid var(--line);border-radius:999px;color:var(--accent-strong);font-size:.77rem;font-weight:700;text-decoration:none}
+.reconnectLink:hover{background:var(--surface-hover)}
+.removeButton{display:grid;place-items:center;width:2rem;height:2rem;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--muted);cursor:pointer;transition:color .18s ease,background-color .18s ease}
 .removeButton:hover{color:var(--error-toast-icon-color);background:var(--error-toast-icon-bg)}
 .removeButton svg{width:.95rem;height:.95rem}
 .helperText{margin:.65rem 0 .1rem;color:var(--muted);font-size:.74rem}
-.addSenderRow{display:inline-flex;align-items:center;gap:.4rem;margin-top:1rem;color:var(--accent-strong);font-size:.82rem;font-weight:700;text-decoration:none}
-.addSenderRow:hover{text-decoration:underline}
+.addSenderRow{display:inline-flex;align-items:center;gap:.4rem;margin-top:1rem;padding:.55rem .85rem;border:1px solid var(--line);border-radius:999px;color:var(--accent-strong);font-size:.82rem;font-weight:700;text-decoration:none}
+.addSenderRow:hover{background:var(--surface-hover)}
 .addSenderRow svg{width:1rem;height:1rem}
 .passwordInner{max-width:35rem}
 .passwordIntro{margin:0 0 1rem;color:var(--muted);font-size:.84rem;line-height:1.5}
 .passwordForm{display:grid;gap:.9rem}
 .passwordForm :global(.field){display:grid;gap:.35rem}
 .passwordForm :global(.field) label{font-size:.8rem;font-weight:700}
-.passwordForm :global(.field) input{width:100%}
+.passwordForm :global(.field) input{width:100%;border-radius:999px}
 .fieldHint{margin:0;color:var(--muted);font-size:.74rem}
 .formActions{display:flex;margin-top:.25rem}
 .formActions .button{min-width:9.5rem}

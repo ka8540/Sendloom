@@ -77,7 +77,6 @@ export function AccountDashboard({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordChallenge, setPasswordChallenge] = useState<OtpChallengeMetadata | null>(null);
   const [activeSection, setActiveSection] = useState<"information" | "senders" | "password" | "deletion" | null>("information");
-  const deleteHeaderRef = useRef<HTMLButtonElement>(null);
 
   const currentPasswordId = useId();
   const newPasswordId = useId();
@@ -409,8 +408,8 @@ export function AccountDashboard({
           </div>
         </AccountSettingsSection>
 
-        <AccountSettingsSection id="deletion" title="Delete account" description="Delete your Sendloom account or request permanent removal of your outreach data." icon={UserRoundX} danger expanded={activeSection === "deletion"} onToggle={() => toggleSection("deletion")} headerRef={deleteHeaderRef}>
-          <AccountDeletionSection onKeepUsing={() => { setActiveSection(null); requestAnimationFrame(() => deleteHeaderRef.current?.focus()); }} />
+        <AccountSettingsSection id="deletion" title="Delete account" description="Delete your Sendloom account or request permanent removal of your outreach data." icon={UserRoundX} danger expanded={activeSection === "deletion"} onToggle={() => toggleSection("deletion")}>
+          <AccountDeletionSection />
         </AccountSettingsSection>
       </div>
 
