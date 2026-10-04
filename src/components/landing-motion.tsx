@@ -32,6 +32,112 @@ export function LandingMotion() {
 
       gsap.registerPlugin(ScrollTrigger);
 
+      /*
+       * Data chapter scrollytelling.
+       *
+       * Scroll position is the only source of truth: one ScrollTrigger maps
+       * section progress onto the three-card deck, so the animation is
+       * inherently reversible and never timer-based. Card motion is scrubbed
+       * (applied verbatim from progress); the staggered reveals inside each
+       * card are plain CSS transitions gated by [data-active].
+       *
+       * The whole effect is desktop-only. gsap.matchMedia reverts everything
+       * — inline styles, the trigger, and the `data-story="enhanced"`
+       * attribute that arms the sticky grid — below 1024px, where the same
+       * DOM falls back to a plain stacked section.
+       *
+       * Registered before the reveal pass below: matchMedia evaluates
+       * synchronously, so the generic reveals can skip the steps and cards
+       * while the deck owns them and animate them in the stacked layout.
+       */
+      const story = document.querySelector<HTMLElement>("[data-story]");
+      const media = gsap.matchMedia();
+      if (story) {
+        media.add("(min-width: 1024px)", () => {
+          story.setAttribute("data-story", "enhanced");
+
+          const cards = gsap.utils.toArray<HTMLElement>("[data-story-card]", story);
+          const steps = gsap.utils.toArray<HTMLElement>("[data-story-step]", story);
+          const fills = gsap.utils.toArray<HTMLElement>("[data-story-fill]", story);
+
+          /* If a narrow viewport already revealed the copies, drop the
+             leftover inline reveal styles so the enhanced crossfade (CSS,
+             gated by [data-active]) owns step opacity from here on. */
+          gsap.set(steps, { clearProps: "opacity,transform" });
+
+          const count = cards.length;
+          let activeIndex = -1;
+
+          /*
+           * Persistent deck. Every card always occupies a slot and stays
+           * visible — no state, at any scroll position, has opacity below
+           * 0.5, so fast scrolling can never produce an empty stage:
+           *
+           *   seated    front, fully opaque
+           *   waiting   stacked below the active card, peeking out
+           *   passed    settled just above/behind, subdued but present
+           *
+           * x measures distance from the card's seat in story steps
+           * (x = 0 … seated, x = -1 … next slot down, x = +1 … dealt).
+           */
+          const apply = (progress: number) => {
+            cards.forEach((card, i) => {
+              const x = progress * count - (i + 0.28);
+              let y = 0;
+              let rotation = 0;
+              let scale = 1;
+              let opacity = 1;
+              if (x < -0.5) {
+                /* Waiting in the deck below: slot 1 peeks, slot 2 sits deeper. */
+                const t = Math.min(-x - 0.5, 2);
+                y = Math.min(t * 26, 26);
+                rotation = Math.min(t * 1.2, 1.5);
+                scale = 1 - Math.min(t * 0.05, 0.05);
+                opacity = 1 - Math.min(t * 0.45, 0.5);
+              } else if (x > 0.15) {
+                /* Dealt: lifts slightly and settles above, never blinks out. */
+                const t = Math.min((x - 0.15) / 0.5, 2);
+                y = -Math.min(t * 14, 18);
+                rotation = -Math.min(t * 1.2, 1.5);
+                scale = 1 - Math.min(t * 0.03, 0.05);
+                opacity = 1 - Math.min(t * 0.3, 0.6);
+              }
+              gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - Math.abs(x) * 20) });
+            });
+
+            /* Discrete active story: text is driven by this alone, never by
+               transition opacity, so it cannot all be zero at once. A fast
+               flick lands directly on the final state — no queue, no wait. */
+            const index = progress < 0.3 ? 0 : progress < 0.67 ? 1 : 2;
+            if (index !== activeIndex) {
+              activeIndex = index;
+              steps.forEach((step, i) => step.toggleAttribute("data-active", i === index));
+              cards.forEach((card, i) => card.toggleAttribute("data-active", i === index));
+              fills.forEach((fill, i) => fill.parentElement?.toggleAttribute("data-active", i === index));
+            }
+
+            fills.forEach((fill, i) => {
+              gsap.set(fill, { scaleX: Math.min(Math.max(progress * count - i, 0), 1) });
+            });
+          };
+
+          apply(0);
+
+          ScrollTrigger.create({
+            trigger: story,
+            /* Matches the stage's sticky top offset (min 6.5rem). */
+            start: "top top+=104",
+            end: "bottom bottom-=40",
+            onUpdate: (self) => apply(self.progress),
+            onRefresh: (self) => apply(self.progress)
+          });
+
+          return () => {
+            story.removeAttribute("data-story");
+          };
+        });
+      }
+
       const context = gsap.context(() => {
         const words = gsap.utils.toArray<HTMLElement>("[data-hero-word]");
         if (words.length > 0) {
@@ -46,7 +152,16 @@ export function LandingMotion() {
           });
         }
 
-        const reveals = gsap.utils.toArray<HTMLElement>("[data-reveal]");
+        /* The Data chapter's steps and cards carry data-reveal for the
+           stacked (mobile / unenhanced) layout. While the story is enhanced
+           the deck scrub and the CSS crossfade own them, and a reveal tween
+           writing inline opacity would fight both — skip them there. */
+        const storyEnhanced = story?.getAttribute("data-story") === "enhanced";
+        const reveals = gsap.utils.toArray<HTMLElement>("[data-reveal]").filter(
+          (element) =>
+            !storyEnhanced ||
+            !(element.hasAttribute("data-story-step") || element.hasAttribute("data-story-card"))
+        );
         reveals.forEach((element) => {
           /* Cards sharing a row cross the trigger line together; a small
              sibling-order delay turns that into a cascade. */
@@ -163,102 +278,6 @@ export function LandingMotion() {
           }
         }
       });
-
-      /*
-       * Data chapter scrollytelling.
-       *
-       * Scroll position is the only source of truth: one ScrollTrigger maps
-       * section progress onto the three-card deck, so the animation is
-       * inherently reversible and never timer-based. Card motion is scrubbed
-       * (applied verbatim from progress); the staggered reveals inside each
-       * card are plain CSS transitions gated by [data-active].
-       *
-       * The whole effect is desktop-only. gsap.matchMedia reverts everything
-       * — inline styles, the trigger, and the `data-story="enhanced"`
-       * attribute that arms the sticky grid — below 1024px, where the same
-       * DOM falls back to a plain stacked section.
-       */
-      const story = document.querySelector<HTMLElement>("[data-story]");
-      const media = gsap.matchMedia();
-      if (story) {
-        media.add("(min-width: 1024px)", () => {
-          story.setAttribute("data-story", "enhanced");
-
-          const cards = gsap.utils.toArray<HTMLElement>("[data-story-card]", story);
-          const steps = gsap.utils.toArray<HTMLElement>("[data-story-step]", story);
-          const fills = gsap.utils.toArray<HTMLElement>("[data-story-fill]", story);
-          const count = cards.length;
-          let activeIndex = -1;
-
-          /*
-           * Persistent deck. Every card always occupies a slot and stays
-           * visible — no state, at any scroll position, has opacity below
-           * 0.5, so fast scrolling can never produce an empty stage:
-           *
-           *   seated    front, fully opaque
-           *   waiting   stacked below the active card, peeking out
-           *   passed    settled just above/behind, subdued but present
-           *
-           * x measures distance from the card's seat in story steps
-           * (x = 0 … seated, x = -1 … next slot down, x = +1 … dealt).
-           */
-          const apply = (progress: number) => {
-            cards.forEach((card, i) => {
-              const x = progress * count - (i + 0.28);
-              let y = 0;
-              let rotation = 0;
-              let scale = 1;
-              let opacity = 1;
-              if (x < -0.5) {
-                /* Waiting in the deck below: slot 1 peeks, slot 2 sits deeper. */
-                const t = Math.min(-x - 0.5, 2);
-                y = Math.min(t * 26, 26);
-                rotation = Math.min(t * 1.2, 1.5);
-                scale = 1 - Math.min(t * 0.05, 0.05);
-                opacity = 1 - Math.min(t * 0.45, 0.5);
-              } else if (x > 0.15) {
-                /* Dealt: lifts slightly and settles above, never blinks out. */
-                const t = Math.min((x - 0.15) / 0.5, 2);
-                y = -Math.min(t * 14, 18);
-                rotation = -Math.min(t * 1.2, 1.5);
-                scale = 1 - Math.min(t * 0.03, 0.05);
-                opacity = 1 - Math.min(t * 0.3, 0.6);
-              }
-              gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - Math.abs(x) * 20) });
-            });
-
-            /* Discrete active story: text is driven by this alone, never by
-               transition opacity, so it cannot all be zero at once. A fast
-               flick lands directly on the final state — no queue, no wait. */
-            const index = progress < 0.3 ? 0 : progress < 0.67 ? 1 : 2;
-            if (index !== activeIndex) {
-              activeIndex = index;
-              steps.forEach((step, i) => step.toggleAttribute("data-active", i === index));
-              cards.forEach((card, i) => card.toggleAttribute("data-active", i === index));
-              fills.forEach((fill, i) => fill.parentElement?.toggleAttribute("data-active", i === index));
-            }
-
-            fills.forEach((fill, i) => {
-              gsap.set(fill, { scaleX: Math.min(Math.max(progress * count - i, 0), 1) });
-            });
-          };
-
-          apply(0);
-
-          ScrollTrigger.create({
-            trigger: story,
-            /* Matches the stage's sticky top offset (min 6.5rem). */
-            start: "top top+=104",
-            end: "bottom bottom-=40",
-            onUpdate: (self) => apply(self.progress),
-            onRefresh: (self) => apply(self.progress)
-          });
-
-          return () => {
-            story.removeAttribute("data-story");
-          };
-        });
-      }
 
       ScrollTrigger.refresh();
 
