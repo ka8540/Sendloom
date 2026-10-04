@@ -168,7 +168,7 @@ export default function LandingPage() {
      as static markup; LandingMotion deals them as a deck on desktop. All
      names and companies are fictional. */
   const dataVisuals = [
-    <article key="imports" className={styles.dataCard} data-story-card aria-label="Imports: mapping a CSV to contact fields">
+    <article key="imports" className={styles.dataCard} data-story-card data-reveal aria-label="Imports: mapping a CSV to contact fields">
       <div className={styles.winBar}>
         <SendloomLogo className={styles.winMark} />
         <span className={styles.winTitle}>Imports</span>
@@ -214,7 +214,7 @@ export default function LandingPage() {
       </div>
     </article>,
 
-    <article key="discover" className={styles.dataCard} data-story-card aria-label="Discover: searching contacts by company, role, and location">
+    <article key="discover" className={styles.dataCard} data-story-card data-reveal aria-label="Discover: searching contacts by company, role, and location">
       <div className={styles.winBar}>
         <SendloomLogo className={styles.winMark} />
         <span className={styles.winTitle}>Discover</span>
@@ -270,7 +270,7 @@ export default function LandingPage() {
       </div>
     </article>,
 
-    <article key="outreach-list" className={styles.dataCard} data-story-card aria-label="Discover: reviewing people for an outreach list">
+    <article key="outreach-list" className={styles.dataCard} data-story-card data-reveal aria-label="Discover: reviewing people for an outreach list">
       <div className={styles.winBar}>
         <SendloomLogo className={styles.winMark} />
         <span className={styles.winTitle}>Add to outreach</span>
@@ -419,7 +419,7 @@ export default function LandingPage() {
           stacks each pair — see the fallback rules in the stylesheet. */}
       <section className={`${styles.chapter} ${styles.dataStory}`} id="why-sendloom" data-story>
         <div className={styles.dataStage}>
-          <header className={styles.dataHead}>
+          <header className={styles.dataHead} data-reveal>
             <p className={styles.chapterLabel}>
               <span className={styles.chapterIndex}>{chapters.data.index}</span>
               {chapters.data.label}
@@ -437,7 +437,7 @@ export default function LandingPage() {
               card into the right-hand deck. */}
           {dataStories.map((story, i) => (
             <Fragment key={story.title}>
-              <div className={styles.dataStep} data-story-step>
+              <div className={styles.dataStep} data-story-step data-reveal>
                 <p className={styles.dataStepIndex}>{story.index}</p>
                 <h3 className={styles.dataStepTitle}>{story.title}</h3>
                 <p className={styles.dataStepBody}>{story.body}</p>
