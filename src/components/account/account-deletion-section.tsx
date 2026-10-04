@@ -128,7 +128,7 @@ export function AccountDeletionSection() {
                 <span className={styles.optionCopy}><span className={styles.optionHeading}><strong>Delete my account and outreach data</strong><em>Requires review</em></span><span>Request permanent removal of private sequences, imports, templates, attachments, and Discover activity. An admin reviews the request before the irreversible purge.</span></span>
               </label>
             </div>
-            <div className={styles.modalActions}><div className={styles.cancelWrap}><button type="button" className={styles.cancelButton} aria-describedby={`${titleId}-cancel-tip`} onClick={closeChoices}>Cancel</button><span id={`${titleId}-cancel-tip`} className={styles.cancelTooltip} role="tooltip"><span aria-hidden="true">💚</span> Keep using Sendloom</span></div><button type="button" className={styles.modalContinue} disabled={!selection} onClick={() => { setChoice(selection); setChoiceOpen(false); }}>Continue <ArrowRight aria-hidden="true" /></button></div>
+            <div className={styles.modalActions}><div className={styles.cancelWrap}><button type="button" className={styles.cancelButton} aria-describedby={`${titleId}-cancel-tip`} onClick={closeChoices}>Cancel</button><span id={`${titleId}-cancel-tip`} className={styles.cancelTooltip} role="tooltip"><span aria-hidden="true">🥹</span> Keep using Sendloom</span></div><button type="button" className={styles.modalContinue} disabled={!selection} onClick={() => { setChoice(selection); setChoiceOpen(false); }}>Continue <ArrowRight aria-hidden="true" /></button></div>
           </div>
         </div>, document.body
       ) : null}
