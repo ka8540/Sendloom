@@ -1,0 +1,42 @@
+.slot {
+  display: flex;
+  align-items: center;
+  width: 36px;
+  height: 51.2px;
+  flex: none;
+}
+
+.circle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--elevation-1);
+  cursor: pointer;
+}
+
+.circle:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.placeholder {
+  cursor: default;
+}
+
+.animatedIcon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
