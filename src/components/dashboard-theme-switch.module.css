@@ -1,84 +1,82 @@
 .slot {
   position: relative;
-  width: 114px;
+  width: 80px;
   height: 51.2px;
   flex: none;
 }
 
 .track {
-  --theme-step: calc((114px - 2px) / 3);
   position: absolute;
   top: 7.6px;
   left: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: center;
-  width: 114px;
+  display: block;
+  width: 80px;
   height: 36px;
+  padding: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-ghost);
   box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.track:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
 .slot[data-orientation="vertical"] {
   width: 40px;
-  height: 51.2px;
 }
 
 .track[data-orientation="vertical"] {
   top: auto;
   bottom: 0;
-  left: 0;
-  --theme-step: calc((114px - 2px) / 3);
-  grid-template-columns: 1fr;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
   width: 40px;
-  height: 114px;
+  height: 80px;
 }
 
-.option {
-  position: relative;
+.icon {
+  position: absolute;
   z-index: 0;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
+  width: 16px;
+  pointer-events: none;
   color: color-mix(in srgb, var(--muted) 70%, transparent);
-  cursor: pointer;
-}
-
-.option svg {
-  flex: none;
   opacity: 0.7;
   transition: color 200ms ease-out, opacity 200ms ease-out, transform 200ms ease-out;
 }
 
-.option[data-selected="true"] {
-  color: var(--text);
+.sun { left: 9px; }
+.moon { right: 9px; }
+
+.track[data-orientation="vertical"] .icon {
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 16px;
 }
 
-.option[data-selected="true"] svg {
+.track[data-orientation="vertical"] .sun { top: 9px; bottom: auto; }
+.track[data-orientation="vertical"] .moon { top: auto; bottom: 9px; }
+
+.track[data-checked="false"] .sun,
+.track[data-checked="true"] .moon {
+  color: var(--text);
   opacity: 1;
   transform: scale(1.1);
-}
-
-.option:focus-visible {
-  outline: 2px solid var(--field-focus);
-  outline-offset: -3px;
 }
 
 .thumb {
   position: absolute;
   z-index: 10;
-  top: 4px;
-  left: calc((114px - 2px) / 6 + 1px - 14px);
+  top: 3px;
+  left: 3px;
   width: 28px;
   height: 28px;
   border: 1px solid color-mix(in srgb, var(--muted) 38%, var(--line));
@@ -86,19 +84,26 @@
   background: color-mix(in srgb, var(--surface-strong) 12%, transparent);
   box-shadow: var(--elevation-1);
   pointer-events: none;
-  transform: translateX(calc(var(--selection-index) * var(--theme-step)));
+  transform: translateX(0);
   transition: transform 200ms ease-out;
 }
 
+.track[data-checked="true"] .thumb {
+  transform: translateX(44px);
+}
+
 .track[data-orientation="vertical"] .thumb {
-  top: calc((114px - 2px) / 6 + 1px - 14px);
-  left: 6px;
-  transform: translateY(calc(var(--selection-index) * var(--theme-step)));
+  left: 5px;
+  transform: translateY(0);
+}
+
+.track[data-orientation="vertical"][data-checked="true"] .thumb {
+  transform: translateY(44px);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .thumb,
-  .option svg {
+  .icon {
     transition: none;
   }
 }
