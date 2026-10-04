@@ -1536,44 +1536,6 @@
   z-index: 1;
 }
 
-.desktopThemeMenu :global(.theme-menu__trigger) {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 999px;
-  border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 56%, transparent), color-mix(in srgb, var(--landing-panel) 48%, transparent)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
-  box-shadow:
-    0 10px 22px rgba(7, 18, 33, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px) saturate(1.12);
-  -webkit-backdrop-filter: blur(20px) saturate(1.12);
-}
-
-.desktopThemeMenu :global(.theme-menu__trigger:hover),
-.desktopThemeMenu :global(.theme-menu__trigger:focus-visible) {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 66%, transparent), color-mix(in srgb, var(--landing-panel) 56%, transparent)),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05));
-  box-shadow:
-    0 14px 28px rgba(7, 18, 33, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-}
-
-.desktopThemeMenu :global(.theme-menu__panel) {
-  min-width: 13rem;
-  border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
-  box-shadow:
-    0 22px 48px rgba(7, 18, 33, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(26px) saturate(1.12);
-  -webkit-backdrop-filter: blur(26px) saturate(1.12);
-}
-
 .navLink,
 .navGhostButton,
 .navPrimaryButton,
@@ -3244,37 +3206,6 @@
 
   .mobileThemeLabel {
     display: none;
-  }
-
-  .mobileThemeMenu :global(.theme-menu__trigger) {
-    width: 3.3rem;
-    height: 3.3rem;
-    border-radius: 999px;
-    border-color: color-mix(in srgb, var(--landing-line) 76%, white 8%);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 58%, transparent), color-mix(in srgb, var(--landing-panel) 46%, transparent)),
-      linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03));
-    box-shadow:
-      0 12px 24px rgba(7, 18, 33, 0.18),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  }
-
-  .mobileThemeMenu :global(.theme-menu__panel) {
-    top: auto;
-    bottom: calc(100% + 0.5rem);
-    left: 0;
-    right: auto;
-    min-width: 12.5rem;
-    max-width: calc(100vw - 3rem);
-    border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
-    box-shadow:
-      0 22px 48px rgba(7, 18, 33, 0.22),
-      inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(26px) saturate(1.12);
-    -webkit-backdrop-filter: blur(26px) saturate(1.12);
   }
 
   .mobileCtaRow {

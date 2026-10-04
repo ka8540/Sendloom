@@ -1,0 +1,72 @@
+.track {
+  box-sizing: border-box;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  flex: none;
+  width: 110px;
+  height: 38px;
+  padding: 1px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.thumb {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: calc((100% - 2px) / 3);
+  height: calc(100% - 2px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  box-shadow: var(--elevation-1);
+  pointer-events: none;
+  transition: transform 210ms var(--ease-out);
+}
+
+.thumbLight {
+  transform: translateX(0);
+}
+
+.thumbSystem {
+  transform: translateX(100%);
+}
+
+.thumbDark {
+  transform: translateX(200%);
+}
+
+.option {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 210ms var(--ease-out);
+}
+
+.selected {
+  color: var(--text);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb,
+  .option {
+    transition: none;
+  }
+}

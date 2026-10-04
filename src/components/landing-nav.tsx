@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "@/app/landing.module.css";
 import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
-import { ThemeSwitcher } from "@/components/theme-switcher";
+import { ThemeSwitch } from "@/components/theme-switch";
 
 type LandingNavItem = {
   href: string;
@@ -266,7 +266,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
         </nav>
 
         <div className={styles.desktopActions}>
-          <ThemeSwitcher className={styles.desktopThemeMenu} />
+          <ThemeSwitch />
           <Link className={styles.navGhostButton} href="/login">
             Login
           </Link>
@@ -297,7 +297,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
           <div className={styles.mobileMetaRow}>
             <div className={styles.mobileThemeBlock}>
               <span className={styles.mobileThemeLabel}>Theme</span>
-              <ThemeSwitcher className={styles.mobileThemeMenu} />
+              <ThemeSwitch />
             </div>
 
             <div className={styles.mobileCtaRow}>
