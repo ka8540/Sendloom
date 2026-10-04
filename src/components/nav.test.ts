@@ -298,8 +298,8 @@ describe("session controls footer order", () => {
     expect(SESSION_SOURCE).toContain('<div className="nav-footer-divider" role="separator" aria-hidden="true" />');
   });
 
-  it("keeps the theme switcher and logout controls intact", () => {
-    expect(SESSION_SOURCE).toContain("ThemeSwitcher");
+  it("keeps the dashboard theme switch and logout controls intact", () => {
+    expect(SESSION_SOURCE).toContain("DashboardThemeSwitch collapsed={collapsed}");
     expect(SESSION_SOURCE).toContain('className="nav-item nav-item-button"');
     expect(SESSION_SOURCE).toContain("Log out");
   });
