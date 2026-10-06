@@ -354,7 +354,9 @@ Old admin URLs remain as redirects: `/admin/restrictions` → `/admin/users?stat
 
 ## Main public pages
 
-`/` (landing), `/login`, `/signup`, `/faq`, `/privacy`, `/terms`, `/abuse`, `/verify-eligibility`, plus the token routes `/track/open/[token]`, `/track/click/[token]`, and `/unsubscribe/[token]`. Email/password signup is a two-stage flow: credentials first, then the six-digit code sent to that email. Google signup/login is unchanged.
+`/` (landing), `/product` (Product Tour), `/login`, `/signup`, `/faq`, `/privacy`, `/terms`, `/abuse`, `/verify-eligibility`, plus the token routes `/track/open/[token]`, `/track/click/[token]`, and `/unsubscribe/[token]`. Email/password signup is a two-stage flow: credentials first, then the six-digit code sent to that email. Google signup/login is unchanged.
+
+The landing page introduces `/product` in a Product chapter after Data, Sequences, and Control. Its **See product tour** CTA opens the public tour in the same tab; the public navbar has no Product link. The teaser uses one muted Sequence preview. The tour shows real Discover, Import, Templates, and Sequences demos served directly from public Cloudflare R2 URLs, with feature videos started by the visitor and signup CTAs pointing to `/signup`. No video files are stored in the repository.
 
 Visitors with a valid session are redirected from the landing and auth pages straight to `/workspace`.
 
@@ -433,6 +435,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Route | Purpose |
 | --- | --- |
 | `/` | Landing page (redirects signed-in visitors to `/workspace`) |
+| `/product` | Public Product Tour with four workflow demos; linked from the landing-page Product chapter |
 | `/signup`, `/login` | Email-verified account creation and sign-in |
 | `/faq` | Frequently asked questions |
 | `/privacy`, `/terms`, `/abuse` | Legal and anti-abuse policy pages |
@@ -595,9 +598,10 @@ OTP challenges are intentionally absent from the Prisma data model. Pending pass
 │   │   │   ├── templates
 │   │   │   └── workspace      # Overview
 │   │   ├── api
+│   │   ├── product            # public Product Tour and demo-video component
 │   │   ├── track
 │   │   ├── unsubscribe
-│   │   └── (public pages: login, signup, faq, privacy, terms, abuse, verify-eligibility)
+│   │   └── (other public pages: login, signup, faq, privacy, terms, abuse, verify-eligibility)
 │   ├── components
 │   │   ├── account            # account-dashboard
 │   │   ├── analysis           # analysis-workspace, analysis-charts, analysis-ui
@@ -617,6 +621,8 @@ OTP challenges are intentionally absent from the Prisma data model. Pending pass
 Notable files:
 
 - `src/components/nav.tsx` — sidebar, collapsed persistence, nested Analysis navigation, Account footer item
+- `src/app/page.tsx` / `src/components/landing-product-preview.tsx` — landing-page Product chapter and its single R2 preview
+- `src/app/product/page.tsx` / `src/app/product/product-demo-video.tsx` — public Product Tour and reusable demo-video markup
 - `src/components/workspace-page-header.tsx` — the shared page header used by list/dashboard pages
 - `src/components/dashboard/overview-command-center.tsx` — Overview server component
 - `src/app/(app)/campaigns/sequence-dashboard.tsx` — Sequences control bar, table, and pagination

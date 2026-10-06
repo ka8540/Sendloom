@@ -9,6 +9,7 @@ import { LandingHeroFlow } from "@/components/landing-hero-flow";
 import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
+import { LandingProductPreview } from "@/components/landing-product-preview";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
@@ -19,16 +20,16 @@ import styles from "@/app/landing.module.css";
  * Landing page.
  *
  * Structure follows a chaptered marketing narrative: a centred hero, an honest
- * integration strip, then three numbered chapters (Data / Sequences / Control)
+ * integration strip, then four numbered chapters (Data / Sequences / Control / Product)
  * that each open with a headline carrying one italicised emphasis phrase.
  *
  * Two deliberate constraints govern this file:
  *
  *   1. Layout families do not repeat. Hero (split copy/visual), integration strip
  *      (inline row), chapter 01 (sticky-scroll story), chapter 02 (offset split),
- *      chapter 03 (full-bleed visual), safety (two-column list), CTA (panel).
- *      Seven sections, seven distinct compositions.
- *   2. Exactly three chapter labels exist on the page. They are the only
+ *      chapter 03 (full-bleed visual), chapter 04 (video-led split),
+ *      safety (two-column list), CTA (panel). Eight distinct compositions.
+ *   2. Exactly four chapter labels exist on the page. They are the only
  *      small-caps labels above headlines; the hero deliberately has none.
  */
 
@@ -50,7 +51,7 @@ type Chapter = {
   intro: string;
 };
 
-const chapters: Record<"data" | "sequences" | "control", Chapter> = {
+const chapters: Record<"data" | "sequences" | "control" | "product", Chapter> = {
   data: {
     index: "01",
     label: "Data",
@@ -71,6 +72,13 @@ const chapters: Record<"data" | "sequences" | "control", Chapter> = {
     headline: { lead: "Know what happened.", emphasis: "And why." },
     intro:
       "Delivery, opens, clicks, replies, and retries stay attached to the run that produced them, on the same screen that launched it."
+  },
+  product: {
+    index: "04",
+    label: "Product",
+    headline: { lead: "See the whole workflow", emphasis: "in action." },
+    intro:
+      "Watch how Sendloom takes you from finding the right people to importing contacts, creating templates, and launching structured sequences."
   }
 };
 
@@ -488,6 +496,20 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* =================== CHAPTER 04 - PRODUCT ===================
+          One real preview links this landing story to the complete tour. */}
+      <section className={`${styles.chapter} ${styles.productChapter}`} aria-labelledby="product-chapter-title">
+        <div className={styles.productCopy}>
+          <ChapterHead chapter={chapters.product} titleId="product-chapter-title" />
+          <Link className={styles.buttonPrimary} href="/product" data-reveal>
+            See product tour
+          </Link>
+        </div>
+        <div className={styles.productVisual} data-reveal>
+          <LandingProductPreview />
+        </div>
+      </section>
+
       {/* ========================== SAFETY ==========================
           Two-column definition list. No cards: these are claims, and a
           border around each would add weight without meaning. */}
@@ -530,9 +552,9 @@ export default function LandingPage() {
 
 /*
  * Chapter head. The numbered label is the page's only recurring small-caps
- * device and appears exactly three times, once per chapter.
+ * device and appears exactly four times, once per chapter.
  */
-function ChapterHead({ chapter, centered = false }: { chapter: Chapter; centered?: boolean }) {
+function ChapterHead({ chapter, centered = false, titleId }: { chapter: Chapter; centered?: boolean; titleId?: string }) {
   return (
     <header
       className={centered ? `${styles.chapterHead} ${styles.chapterHeadCentered}` : styles.chapterHead}
@@ -542,7 +564,7 @@ function ChapterHead({ chapter, centered = false }: { chapter: Chapter; centered
         <span className={styles.chapterIndex}>{chapter.index}</span>
         {chapter.label}
       </p>
-      <h2 className={styles.chapterTitle}>
+      <h2 id={titleId} className={styles.chapterTitle}>
         {chapter.headline.lead} <em className={styles.emphasis}>{chapter.headline.emphasis}</em>
         {chapter.headline.trail}
       </h2>

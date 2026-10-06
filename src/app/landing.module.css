@@ -352,7 +352,7 @@
   text-align: center;
 }
 
-/* The page's only recurring small-caps label. Appears exactly three
+/* The page's only recurring small-caps label. Appears exactly four
    times, once per chapter. */
 .chapterLabel {
   display: flex;
@@ -1171,6 +1171,96 @@
   box-shadow: var(--elevation-3);
 }
 
+/* ---- Chapter 04: video-led product tour ---- */
+
+.productChapter {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  align-items: center;
+  gap: clamp(2.5rem, 6vw, 5.5rem);
+  border-top: 1px solid var(--line);
+}
+
+.productCopy {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.productCopy .chapterHead {
+  margin-bottom: var(--space-6);
+}
+
+.productVisual {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.productPreview {
+  min-width: 0;
+}
+
+.productVideoFrame {
+  overflow: hidden;
+  padding: clamp(0.5rem, 1.4vw, 0.9rem);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: var(--elevation-3);
+}
+
+.productVideo {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+  background: var(--surface-strong);
+}
+
+.productMediaFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.productMediaFooter p {
+  margin: 0;
+}
+
+.productPlayButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.productPlayButton:hover,
+.productPlayButton:focus-visible {
+  background: var(--accent-soft);
+}
+
+.productPlayButton svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
 /* ===================== Safety =====================
    Two-column definition list. No cards: these are claims about
    behaviour, and a border around each would add weight, not meaning. */
@@ -1334,6 +1424,26 @@
 
   .heroInner {
     max-width: 46rem;
+  }
+}
+
+@media (max-width: 1050px) {
+  .productChapter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .productCopy,
+  .productVisual {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .productCopy {
+    max-width: 44rem;
+  }
+
+  .productCopy .chapterHead {
+    margin-bottom: var(--space-5);
   }
 }
 

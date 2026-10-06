@@ -2,7 +2,7 @@
 
 ## Documentation Status
 
-The current Finder/Discover product-surface status in this document was checked against `2fd4b8cb8aaa73a7b5d6b75c068e76531b8fb562` on `chore/hide-hunter-finder-ui` on 2026-10-01. Historical implementation notes elsewhere in this long-form reference retain their original context; the table below records the earlier email-OTP verification snapshot.
+The current Finder/Discover product-surface status in this document was checked against `2fd4b8cb8aaa73a7b5d6b75c068e76531b8fb562` on `chore/hide-hunter-finder-ui` on 2026-10-01. The public Product Tour and landing integration notes below were checked against `f686c29` on `feature/product-tour-landing-section`. Historical implementation notes elsewhere in this long-form reference retain their original context; the table below records the earlier email-OTP verification snapshot.
 
 | Field | Value |
 | --- | --- |
@@ -176,7 +176,7 @@ Feature commit `8df4224` adds purpose-bound, one-time email OTP challenges for e
 
 ```mermaid
 flowchart TD
-    Public["Public: / · /login · /signup · /faq · /privacy · /terms · /abuse"] --> Gate["/verify-eligibility"]
+    Public["Public: / · /product · /login · /signup · /faq · /privacy · /terms · /abuse"] --> Gate["/verify-eligibility"]
     Gate --> Shell["Authenticated app shell"]
     Shell --> OV["Overview /workspace"]
     Shell --> DI["Discover /prospects"]
@@ -196,6 +196,12 @@ flowchart TD
 ```
 
 Six items appear in the operator product nav (Overview, Discover, Imports, Templates, Sequences, Analysis). Account sits in the sidebar footer as a utility item rather than in the product nav. Admin accounts see the admin nav instead of the operator nav. Public and legal pages are outside the shell and carry the marketing navigation. The retained `/finder` URL redirects to `/prospects` and is not a navigation destination.
+
+### Public Product Tour
+
+The landing page's numbered story runs Data → Sequences → Control → Product. The Product chapter appears immediately after Control and before the Safety/final-CTA content. It uses the existing chapter typography, primary button, theme tokens, and `LandingMotion` scroll reveals. Its **See product tour** link navigates to `/product`; the public navbar itself has no Product link. The chapter shows only one Sequence preview, not the full four-video tour. `src/components/landing-product-preview.tsx` keeps this muted, inline, looping video paused outside the viewport, supplies a play/pause button, and avoids automatic playback when reduced motion is preferred.
+
+`/product` is a public marketing route implemented in `src/app/product/page.tsx`. It reuses `LandingNav`, `MarketingFooter`, and landing motion, and has route-specific title, description, and canonical metadata. The page presents a muted Sequence hero preview; anchor navigation for Discover, Import, Templates, and Sequences; four alternating feature sections with the corresponding real demos; a workflow summary; and `/signup` CTAs. The feature videos use native controls and `preload="metadata"` without autoplay. All four MP4s are loaded directly from the public `pub-9400568eaa014d6cbfd93f37668641cd.r2.dev/auth/ProductPage/` path via `ProductDemoVideo`; no MP4s are committed locally. The tour and teaser use the existing light/dark/system theme tokens, and the feature layout stacks on smaller screens.
 
 ### Overview
 
@@ -525,7 +531,8 @@ Runtime shape:
 
 | Route | Purpose | Auth | Notes |
 | --- | --- | --- | --- |
-| `/` | Marketing landing page | Public; redirects signed-in visitors to `/workspace` | Product narrative, workflow, capabilities, trust points, CTA. |
+| `/` | Marketing landing page | Public; redirects signed-in visitors to `/workspace` | Data, Sequences, Control, and Product chapters; the Product teaser links to `/product`. |
+| `/product` | Product Tour | Public | Four R2 demo videos, workflow overview, signup CTAs; reached from the landing Product chapter, not the navbar. |
 | `/signup` | Account creation | Public; redirects if already signed in | Email/password signup is credentials → six-digit email OTP → account/session. Google path is unchanged. |
 | `/login` | Account sign-in | Public; redirects if already signed in | Email/password and Google sign-in. |
 | `/faq` | Frequently asked questions | Public | Uses marketing/legal nav and footer. |
