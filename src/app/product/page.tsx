@@ -95,7 +95,7 @@ export default function ProductPage() {
           <p className={styles.eyebrow} data-reveal>Product tour</p>
           <h1 id="product-title" className={styles.heroTitle}>
             <span data-hero-word>See</span>{" "}
-            <span data-hero-word>Sendloom</span>
+            <span data-hero-word>Send<span className={styles.heroBrandAccent}>loom</span></span>
             <br />
             <em data-hero-word>in action.</em>
           </h1>
