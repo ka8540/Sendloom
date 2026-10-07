@@ -47,9 +47,9 @@ export const PROSPECT_FINDER_UNAVAILABLE_TITLE = "Discover is not available righ
 export const PROSPECT_FINDER_UNAVAILABLE_BODY =
   "This workspace doesn't have Discover turned on yet. Check back soon, or reach out to your workspace admin.";
 
-// The GraphQL error code processProspectSearch returns when the daily quota is
+// The GraphQL error code processProspectSearch returns when the people allowance is
 // spent. The client recognizes it to show a clean product message.
-export const DISCOVER_DAILY_LIMIT_ERROR_CODE = "DISCOVER_DAILY_LIMIT_REACHED";
+export const DISCOVER_PEOPLE_LIMIT_ERROR_CODE = "DISCOVER_PEOPLE_LIMIT_REACHED";
 
 /** "Up to 10 people per search" — driven by the live quota so it never drifts. */
 export function discoverPerSearchCopy(quota: Pick<DiscoverQuota, "resultsPerSearch"> | null): string {
@@ -1197,11 +1197,11 @@ export function buildProspectSelectionInput(
 }
 
 // ---------------------------------------------------------------------------
-// Discover daily-quota presentation helpers.
+// Discover rolling people allowance presentation helpers.
 // ---------------------------------------------------------------------------
 
 /**
- * Compact remaining-count label, e.g. "3 of 4 searches remaining today".
+ * Compact remaining-count label, e.g. "32 of 40 people available".
  * Exempt (unlimited) accounts return null so the caller can hide the count or
  * show an "Unlimited" label instead — the limit is never rendered for them.
  */
@@ -1209,15 +1209,15 @@ export function formatQuotaRemaining(quota: DiscoverQuota | null): string | null
   if (!quota || quota.unlimited) {
     return null;
   }
-  return `${quota.searchesRemaining} of ${quota.dailySearchLimit} searches remaining today`;
+  return `${quota.peopleRemaining} of ${quota.peopleLimit} people available`;
 }
 
-// The compact detail-header quota chip ("2/4"): the full meaning lives in the
+// The compact detail-header quota chip ("32/40"): the full meaning lives in the
 // chip's aria-label and its hover/focus helper card, never in the visible row.
-export const DISCOVER_QUOTA_TOOLTIP_TITLE = "Discover searches";
+export const DISCOVER_QUOTA_TOOLTIP_TITLE = "Discover allowance";
 
 export type QuotaChipView = {
-  /** Compact visible value, e.g. "2/4" or "Unlimited". */
+  /** Compact visible value, e.g. "32/40" or "Unlimited". */
   value: string;
   /** Full accessible name for the focusable chip. */
   ariaLabel: string;
@@ -1228,7 +1228,7 @@ export type QuotaChipView = {
 
 /**
  * Chip view for the live quota. Remaining is clamped at 0 so a transient
- * negative can never render "-1/4". Unlimited (exempt) accounts show a compact
+ * negative can never render a negative count. Unlimited (exempt) accounts show a compact
  * "Unlimited" — the numeric limit is never rendered for them. Null while the
  * quota is still loading → the chip does not render.
  */
@@ -1239,59 +1239,33 @@ export function formatQuotaChip(quota: DiscoverQuota | null): QuotaChipView | nu
   if (quota.unlimited) {
     return {
       value: "Unlimited",
-      ariaLabel: "Unlimited Discover access",
-      tooltip: "Unlimited Discover access.",
+      ariaLabel: "Unlimited Discover allowance",
+      tooltip: "Unlimited Discover allowance.",
       unlimited: true
     };
   }
-  const remaining = Math.max(0, quota.searchesRemaining);
+  const remaining = Math.max(0, quota.peopleRemaining);
   return {
-    value: `${remaining}/${quota.dailySearchLimit}`,
-    ariaLabel: `${remaining} of ${quota.dailySearchLimit} Discover searches remaining today`,
-    tooltip: `${remaining} of ${quota.dailySearchLimit} searches remaining today.`,
+    value: `${remaining}/${quota.peopleLimit}`,
+    ariaLabel: `${remaining} of ${quota.peopleLimit} people available in Discover`,
+    tooltip: `${remaining} of ${quota.peopleLimit} people available in the rolling 24-hour window.`,
     unlimited: false
   };
 }
 
-/** Difference in whole local calendar days between two dates (to - from). */
-function localCalendarDayDiff(from: Date, to: Date): number {
-  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
-}
-
-/**
- * Reset label in the viewer's local timezone, ALWAYS qualified with the day so a
- * bare time is never ambiguous — e.g. "Resets tomorrow at 5:00 PM" (the daily
- * window resets at the next UTC midnight, which is rarely the local midnight, so
- * "Resets at 5:00 PM" alone read as today-vs-next-day was confusing).
- */
-export function formatQuotaReset(
-  quota: Pick<DiscoverQuota, "resetAt"> | null,
-  now: Date = new Date()
+/** When the oldest counted grant leaves the rolling 24-hour window. */
+export function formatNextAvailability(
+  quota: Pick<DiscoverQuota, "nextAvailabilityAt"> | null
 ): string | null {
-  if (!quota?.resetAt) {
-    return null;
-  }
-  const date = new Date(quota.resetAt);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const dayDiff = localCalendarDayDiff(now, date);
-  if (dayDiff <= 0) {
-    return `Resets today at ${time}`;
-  }
-  if (dayDiff === 1) {
-    return `Resets tomorrow at ${time}`;
-  }
-  const dayLabel = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  return `Resets ${dayLabel} at ${time}`;
+  if (!quota?.nextAvailabilityAt) return null;
+  const date = new Date(quota.nextAvailabilityAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return `More capacity from ${date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
 }
 
 /**
  * Whether the Process action should be blocked for a search. Only a brand-new
- * DRAFT consumes a slot, so only DRAFTs are blocked when the quota is spent;
+ * DRAFT needs capacity, so it is blocked when the allowance is spent;
  * retrying an already-started/FAILED search is idempotent (free) and stays
  * enabled, and exempt accounts are never blocked.
  */
@@ -1302,7 +1276,7 @@ export function isProcessQuotaBlocked(
   if (!quota || quota.unlimited) {
     return false;
   }
-  return status === "DRAFT" && quota.searchesRemaining <= 0;
+  return status === "DRAFT" && quota.peopleRemaining <= 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -1376,24 +1350,24 @@ export function shouldShowAddMore(args: {
 /**
  * A reason the visible "Add 10 more" button is disabled, or null when it is
  * actionable. Disabled while an expansion runs (prevents duplicate requests) and
- * when the daily Discover allowance is spent (exempt accounts are never blocked).
+ * when the rolling Discover allowance is spent (exempt accounts are never blocked).
  */
 export function addMoreDisabledReason(quota: DiscoverQuota | null, expanding: boolean): string | null {
   if (expanding) {
     return ADD_MORE_LOADING_LABEL;
   }
-  if (quota && !quota.unlimited && quota.searchesRemaining <= 0) {
-    return "You've used today's Discover searches.";
+  if (quota && !quota.unlimited && quota.peopleRemaining <= 0) {
+    return "You've reached your Discover allowance for the last 24 hours.";
   }
   return null;
 }
 
-/** "Searches remaining today: 3", or "Unlimited" for an exempt account. */
-export function formatSearchesRemainingLine(quota: DiscoverQuota | null): string {
+/** Available people count, or Unlimited for an exempt account. */
+export function formatPeopleRemainingLine(quota: DiscoverQuota | null): string {
   if (!quota || quota.unlimited) {
-    return "Searches remaining today: Unlimited";
+    return "People available: Unlimited";
   }
-  return `Searches remaining today: ${quota.searchesRemaining}`;
+  return `People available: ${quota.peopleRemaining}`;
 }
 
 /** "Current people: 10" for the confirmation dialog. */
@@ -1440,8 +1414,8 @@ export function companySearchDisabledReason(quota: DiscoverQuota | null, searchi
   if (searching) {
     return COMPANY_SEARCH_LOADING_LABEL;
   }
-  if (quota && !quota.unlimited && quota.searchesRemaining <= 0) {
-    return "You've used today's Discover searches.";
+  if (quota && !quota.unlimited && quota.peopleRemaining <= 0) {
+    return "You've reached your Discover allowance for the last 24 hours.";
   }
   return null;
 }

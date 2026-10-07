@@ -19,12 +19,12 @@ export function badInputError(message: string): GraphQLError {
 }
 
 /**
- * The daily Discover usage quota is exhausted. The message is already
- * user-safe (it carries only the limit and reset time, never internal counters,
+ * The rolling Discover people allowance is exhausted. The message is already
+ * user-safe (it carries only the limit, never internal counters,
  * keys, or user ids); the code lets the client render a clean product state.
  */
-export function discoverDailyLimitError(message: string): GraphQLError {
-  return new GraphQLError(message, { extensions: { code: "DISCOVER_DAILY_LIMIT_REACHED" } });
+export function discoverPeopleLimitError(message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: "DISCOVER_PEOPLE_LIMIT_REACHED" } });
 }
 
 /** Another "Add 10 more" is already running for this search. */

@@ -3,7 +3,7 @@ import type { ProspectCompany } from "@prisma/client";
 import type { GraphQLContext } from "@/graphql/context";
 import {
   badInputError,
-  discoverDailyLimitError,
+  discoverPeopleLimitError,
   discoverDuplicateRoleLocationError,
   discoverExpansionFailedError,
   discoverExpansionRunningError,
@@ -39,8 +39,8 @@ export function mapProspectError(error: unknown): never {
       case "NOT_CONFIGURED":
       case "RATE_LIMITED":
         throw forbiddenError(error.message);
-      case "DISCOVER_DAILY_LIMIT_REACHED":
-        throw discoverDailyLimitError(error.message);
+      case "DISCOVER_PEOPLE_LIMIT_REACHED":
+        throw discoverPeopleLimitError(error.message);
       case "DISCOVER_EXPANSION_ALREADY_RUNNING":
         throw discoverExpansionRunningError(error.message);
       case "DISCOVER_EXPANSION_FAILED":

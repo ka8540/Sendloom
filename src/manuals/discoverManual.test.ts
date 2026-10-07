@@ -164,8 +164,8 @@ describe("detail stage steps", () => {
     expect(ids(steps)).toEqual(["detail-header", "status-summary", "process-action", "quota"]);
     expect(selectors(steps)).not.toContain('[data-discover-tour="people-table"]');
     const process = steps.find((step) => step.id === "process-action");
-    expect(process?.body).toMatch(/one daily Discover search/i);
-    expect(process?.body).toMatch(/does not use another slot/i);
+    expect(process?.body).toMatch(/rolling 24-hour allowance/i);
+    expect(process?.body).toMatch(/retries do not charge twice/i);
   });
 
   it("processing steps explain the wait without result controls", () => {

@@ -1,287 +1,208 @@
+import type { PrismaClient } from "@prisma/client";
+
+import { isApplicationOwner, normalizeEntitlementEmail } from "@/lib/account-entitlements";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
-import { isApplicationOwner, normalizeEntitlementEmail } from "@/lib/account-entitlements";
 
-/**
- * Discover daily usage limits.
- *
- * Ordinary users get a fixed, server-enforced product quota:
- *   - exactly DISCOVER_RESULTS_PER_SEARCH people per processed search (the user
- *     never chooses the result count), and
- *   - DISCOVER_DAILY_SEARCH_LIMIT processed searches per daily window.
- *
- * Creating a draft is free; the quota is consumed atomically the moment a draft
- * is processed, right before the paid Apify/AI discovery pipeline runs. Each
- * search can only ever consume one slot (idempotent per search id), so retries
- * — double clicks, browser/network retries, refreshes, or re-processing a
- * FAILED search — never cost a second slot.
- *
- * Both values default to the documented product limits and can be overridden by
- * env for operations only; the enforced defaults remain 10 results / 4 searches.
- * This module is the single server-side source of truth for the quota and the
- * exempt-email allowlist — none of it is ever sent to the client.
- */
 export const DISCOVER_RESULTS_PER_SEARCH = 10;
-export const DISCOVER_DAILY_SEARCH_LIMIT = 4;
+export const DISCOVER_PEOPLE_LIMIT_24H = 40;
+export const DISCOVER_WINDOW_HOURS = 24;
+const WINDOW_MS = DISCOVER_WINDOW_HOURS * 60 * 60 * 1000;
+const HOLD_MS = 60 * 60 * 1000;
+const KEY_TTL_SECONDS = 2 * 24 * 60 * 60;
 
-const DAILY_COUNTER_PREFIX = "discover:quota";
-const SEARCH_SLOT_PREFIX = "discover:quota:search";
-
-// A search's "slot consumed" marker outlives the one-day counter so that
-// retrying the SAME search (even a day later, after a provider failure) never
-// consumes a second slot. New searches still cost a slot, so this cannot be
-// used to bypass the daily limit.
-const SEARCH_SLOT_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-/** Effective per-search result ceiling (env override, defaulting to 10). */
 export function resolveResultsPerSearch(): number {
-  const configured = env.DISCOVER_RESULTS_PER_SEARCH;
-  return typeof configured === "number" && Number.isFinite(configured) && configured > 0
-    ? configured
-    : DISCOVER_RESULTS_PER_SEARCH;
+  return Math.min(DISCOVER_RESULTS_PER_SEARCH, env.DISCOVER_RESULTS_PER_SEARCH || DISCOVER_RESULTS_PER_SEARCH);
 }
 
-/** Effective processed-searches-per-day ceiling (env override, defaulting to 4). */
-export function resolveDailySearchLimit(): number {
-  const configured = env.DISCOVER_DAILY_SEARCH_LIMIT;
-  return typeof configured === "number" && Number.isFinite(configured) && configured > 0
-    ? configured
-    : DISCOVER_DAILY_SEARCH_LIMIT;
+export function resolvePeopleLimit(): number {
+  return env.DISCOVER_PEOPLE_LIMIT_24H || DISCOVER_PEOPLE_LIMIT_24H;
 }
 
-/** Trim + lowercase an email for case-insensitive comparison. */
 export function normalizeEmail(email: string | null | undefined): string {
   return normalizeEntitlementEmail(email);
 }
 
-/**
- * Server-only allowlist of canonical emails exempt from the DAILY quota.
- * Parsed lazily (never at module scope) so a blank env line is treated as empty
- * and the build never trips the production env refinement. Comma-separated.
- */
 export function getDiscoverQuotaExemptEmails(): Set<string> {
-  return new Set(
-    (env.DISCOVER_QUOTA_EXEMPT_EMAILS ?? "")
-      .split(",")
-      .map((value) => normalizeEmail(value))
-      .filter(Boolean)
-  );
+  return new Set((env.DISCOVER_QUOTA_EXEMPT_EMAILS ?? "").split(",").map(normalizeEmail).filter(Boolean));
 }
 
-/**
- * Whether the AUTHENTICATED account is exempt from the daily Discover quota.
- * The email must be resolved from the session/user record by the caller — never
- * from a request body, GraphQL input, or local storage.
- */
 export function isDiscoverQuotaExempt(email: string | null | undefined): boolean {
   const normalized = normalizeEmail(email);
-  if (!normalized) {
-    return false;
-  }
-  return isApplicationOwner({ email: normalized }) || getDiscoverQuotaExemptEmails().has(normalized);
+  return Boolean(normalized && (isApplicationOwner({ email: normalized }) || getDiscoverQuotaExemptEmails().has(normalized)));
 }
 
 export type DiscoverQuotaStatus = {
   resultsPerSearch: number;
-  dailySearchLimit: number;
-  searchesUsed: number;
-  searchesRemaining: number;
-  resetAt: Date;
+  peopleLimit: number;
+  peopleUsed: number;
+  peopleRemaining: number;
+  windowHours: number;
+  nextAvailabilityAt: Date | null;
   unlimited: boolean;
 };
 
 export type DiscoverQuotaReservation = {
   allowed: boolean;
   status: DiscoverQuotaStatus;
+  reservedProfileIds?: string[];
 };
 
-/** The injectable quota reserver shape (so the service can be unit-tested). */
 export type DiscoverQuotaReserver = (params: {
   userId: string;
-  /** The authenticated account email, resolved from the session. */
   email: string | null;
   searchId: string;
+  phase?: "preflight" | "reserve" | "finalize";
+  candidateIds?: string[];
+  deliveredIds?: string[];
+  prisma?: PrismaClient;
 }) => Promise<DiscoverQuotaReservation>;
 
-/**
- * The current daily window. A fixed UTC calendar day: the counter key carries
- * the date, expires at the next UTC midnight, and `resetAt` is that midnight so
- * the UI can show exactly when access returns. (Sendloom stores no per-user
- * timezone; UTC is the project's established server-side default.)
- */
-function getQuotaWindow(now: Date = new Date()): { quotaDate: string; resetAt: Date; ttlSeconds: number } {
-  const quotaDate = now.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-  const resetAt = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0)
-  );
-  const ttlSeconds = Math.max(1, Math.ceil((resetAt.getTime() - now.getTime()) / 1000));
-  return { quotaDate, resetAt, ttlSeconds };
+function keys(userId: string, operationId: string) {
+  return [
+    `discover:people:usage:${userId}`,
+    `discover:people:holds:${userId}`,
+    `discover:people:reservation:${userId}:${operationId}`
+  ];
 }
 
-function exemptStatus(resetAt: Date): DiscoverQuotaStatus {
-  const limit = resolveDailySearchLimit();
+function status(used: number, reserved: number, next: number | null, unlimited = false): DiscoverQuotaStatus {
+  const limit = resolvePeopleLimit();
   return {
-    resultsPerSearch: resolveResultsPerSearch(),
-    dailySearchLimit: limit,
-    searchesUsed: 0,
-    searchesRemaining: limit,
-    resetAt,
-    unlimited: true
+    resultsPerSearch: resolveResultsPerSearch(), peopleLimit: limit,
+    peopleUsed: Math.min(limit, Math.max(0, used)),
+    peopleRemaining: unlimited ? limit : Math.max(0, limit - used - reserved),
+    windowHours: DISCOVER_WINDOW_HOURS,
+    nextAvailabilityAt: unlimited || next === null ? null : new Date(next + WINDOW_MS),
+    unlimited
   };
 }
 
-function buildStatus(usedRaw: number, resetAt: Date): DiscoverQuotaStatus {
-  const limit = resolveDailySearchLimit();
-  const used = Math.min(Math.max(0, usedRaw), limit);
-  return {
-    resultsPerSearch: resolveResultsPerSearch(),
-    dailySearchLimit: limit,
-    searchesUsed: used,
-    searchesRemaining: Math.max(0, limit - used),
-    resetAt,
-    unlimited: false
-  };
-}
-
-function dailyKey(userId: string, quotaDate: string): string {
-  return `${DAILY_COUNTER_PREFIX}:${userId}:${quotaDate}`;
-}
-
-function searchSlotKey(searchId: string): string {
-  return `${SEARCH_SLOT_PREFIX}:${searchId}`;
-}
-
-/**
- * Read-only Discover quota status for the authenticated user. Never mutates the
- * counter — used by the `discoverQuota` query and the dashboard indicator. On a
- * Redis read failure it reports an optimistic zero-used status; the only
- * authoritative gate is the atomic reservation below.
- */
-export async function getDiscoverQuotaStatus(
-  userId: string,
-  email: string | null
-): Promise<DiscoverQuotaStatus> {
-  const { quotaDate, resetAt } = getQuotaWindow();
-
-  if (isDiscoverQuotaExempt(email)) {
-    return exemptStatus(resetAt);
-  }
-
-  try {
-    const raw = await getRedis().get(dailyKey(userId, quotaDate));
-    const used = raw ? Number.parseInt(raw, 10) || 0 : 0;
-    return buildStatus(used, resetAt);
-  } catch {
-    return buildStatus(0, resetAt);
-  }
-}
-
-// Atomic reserve: idempotent per search, fixed daily ceiling. Runs entirely in
-// one Lua eval so concurrent requests can never over-consume or double-count.
-const RESERVE_SCRIPT = `
-  local dailyKey = KEYS[1]
-  local searchKey = KEYS[2]
-  local limit = tonumber(ARGV[1])
-  local dailyTtl = tonumber(ARGV[2])
-  local searchTtl = tonumber(ARGV[3])
-
-  -- This exact search already reserved a slot: allow without re-consuming.
-  if redis.call('EXISTS', searchKey) == 1 then
-    local current = tonumber(redis.call('GET', dailyKey) or '0')
-    return {1, current}
+// The Redis script is the allocation gate: committed entries and active holds
+// are counted together, so simultaneous searches cannot exceed the limit.
+const QUOTA_SCRIPT = `
+  local usage, holds, operation = KEYS[1], KEYS[2], KEYS[3]
+  local phase, now, window, holdMs, limit, ttl = ARGV[1], tonumber(ARGV[2]), tonumber(ARGV[3]), tonumber(ARGV[4]), tonumber(ARGV[5]), tonumber(ARGV[6])
+  redis.call('ZREMRANGEBYSCORE', usage, '-inf', now - window)
+  redis.call('ZREMRANGEBYSCORE', holds, '-inf', now)
+  local count = tonumber(redis.call('ZCARD', usage))
+  local held = tonumber(redis.call('ZCARD', holds))
+  local first = redis.call('ZRANGE', usage, 0, 0, 'WITHSCORES')
+  local next = first[2] or ''
+  if phase == 'reserve' then
+    local selected = {}
+    local seen = {}
+    for i = 7, #ARGV do
+      local id = ARGV[i]
+      if not seen[id] then
+        seen[id] = true
+        if redis.call('ZSCORE', usage, id) then
+          table.insert(selected, id)
+        elseif redis.call('ZSCORE', holds, id) then
+          if redis.call('SISMEMBER', operation, id) == 1 then table.insert(selected, id) end
+        elseif count + held < limit then
+          redis.call('ZADD', holds, now + holdMs, id)
+          redis.call('SADD', operation, id)
+          held = held + 1
+          table.insert(selected, id)
+        end
+      end
+    end
+    redis.call('EXPIRE', holds, ttl)
+    redis.call('EXPIRE', operation, math.ceil(holdMs / 1000))
+    redis.call('EXPIRE', usage, ttl)
+    return {count, held, next, unpack(selected)}
   end
-
-  local count = tonumber(redis.call('GET', dailyKey) or '0')
-  if count >= limit then
-    return {0, count}
+  if phase == 'finalize' then
+    local delivered = {}
+    for i = 7, #ARGV do delivered[ARGV[i]] = true end
+    local reserved = redis.call('SMEMBERS', operation)
+    for _, id in ipairs(reserved) do
+      if delivered[id] then redis.call('ZADD', usage, 'NX', now, id) end
+      redis.call('ZREM', holds, id)
+    end
+    redis.call('DEL', operation)
+    redis.call('EXPIRE', usage, ttl)
+    count = tonumber(redis.call('ZCARD', usage))
+    held = tonumber(redis.call('ZCARD', holds))
+    first = redis.call('ZRANGE', usage, 0, 0, 'WITHSCORES')
+    next = first[2] or ''
   end
-
-  count = redis.call('INCR', dailyKey)
-  if count == 1 then
-    redis.call('EXPIRE', dailyKey, dailyTtl)
-  end
-  redis.call('SET', searchKey, '1')
-  redis.call('EXPIRE', searchKey, searchTtl)
-  return {1, count}
+  return {count, held, next}
 `;
 
-/**
- * Atomically reserve one daily Discover slot for processing `searchId`.
- *
- * - Exempt accounts (resolved from the authenticated email) are always allowed
- *   and never consume a slot.
- * - The same search id can be reserved repeatedly without consuming more than
- *   one slot (idempotent retries).
- * - The check + increment are a single atomic Lua eval, so simultaneous
- *   requests cannot exceed the daily limit.
- *
- * Redis failures fail closed in production (rethrow) so the paid pipeline never
- * runs unmetered; in development/test they fail open so local work isn't blocked
- * by a missing Redis.
- */
-export async function reserveDiscoverSearchSlot(params: {
-  userId: string;
-  email: string | null;
-  searchId: string;
-}): Promise<DiscoverQuotaReservation> {
-  const { quotaDate, resetAt, ttlSeconds } = getQuotaWindow();
-
-  if (isDiscoverQuotaExempt(params.email)) {
-    return { allowed: true, status: exemptStatus(resetAt) };
+// Rebuild committed use from durable grants after a crash between the database
+// allocation and Redis finalization. Existing scores keep their first timestamp.
+async function reconcile(userId: string, prisma?: PrismaClient, now = Date.now()): Promise<void> {
+  if (!prisma) return;
+  const cutoff = new Date(now - WINDOW_MS);
+  const recent = await prisma.prospectSearchPerson.findMany({
+    where: { userId, allocatedAt: { gt: cutoff } },
+    select: { personId: true }
+  });
+  if (!recent.length) return;
+  // A later search may reuse an existing person for free. Look up the first
+  // durable grant across the user's history so that replay/reuse never starts
+  // a new 24-hour charge. REPROCESS is an operator repair, not user usage.
+  const rows = await prisma.prospectSearchPerson.findMany({
+    where: { userId, personId: { in: [...new Set(recent.map((row) => row.personId))] } },
+    orderBy: { allocatedAt: "asc" },
+    select: { personId: true, allocatedAt: true, allocationSource: true,
+      person: { select: { sourceProfileId: true } } }
+  });
+  const usageKey = keys(userId, "reconcile")[0];
+  const pipeline = getRedis().pipeline();
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.personId)) continue;
+    seen.add(row.personId);
+    if (row.allocatedAt <= cutoff || row.allocationSource === "REPROCESS") continue;
+    pipeline.zadd(usageKey, "NX", row.allocatedAt.getTime(), row.person.sourceProfileId);
   }
+  pipeline.expire(usageKey, KEY_TTL_SECONDS);
+  await pipeline.exec();
+}
 
-  const limit = resolveDailySearchLimit();
-
+export async function getDiscoverQuotaStatus(userId: string, email: string | null, prisma?: PrismaClient): Promise<DiscoverQuotaStatus> {
+  if (isDiscoverQuotaExempt(email)) return status(0, 0, null, true);
   try {
-    const result = (await getRedis().eval(
-      RESERVE_SCRIPT,
-      2,
-      dailyKey(params.userId, quotaDate),
-      searchSlotKey(params.searchId),
-      String(limit),
-      String(ttlSeconds),
-      String(SEARCH_SLOT_TTL_SECONDS)
-    )) as [number, number];
-
-    return { allowed: result[0] === 1, status: buildStatus(result[1], resetAt) };
+    const now = Date.now();
+    await reconcile(userId, prisma, now);
+    const result = await getRedis().eval(QUOTA_SCRIPT, 3, ...keys(userId, "status"), "preflight", now, WINDOW_MS, HOLD_MS, resolvePeopleLimit(), KEY_TTL_SECONDS) as [number, number, string];
+    return status(Number(result[0]), Number(result[1]), result[2] ? Number(result[2]) : null);
   } catch (error) {
-    if (process.env.NODE_ENV === "production") {
-      throw error;
-    }
-    if (process.env.NODE_ENV !== "test") {
-      console.warn("[discover-quota] Redis unavailable; allowing Discover search in development.");
-    }
-    return { allowed: true, status: buildStatus(0, resetAt) };
+    if (process.env.NODE_ENV === "production") throw error;
+    return status(0, 0, null);
   }
 }
 
-/** A clean, user-safe limit message that never leaks internal counters/keys. */
+export const reserveDiscoverPeople: DiscoverQuotaReserver = async (params) => {
+  if (isDiscoverQuotaExempt(params.email)) {
+    return { allowed: true, status: status(0, 0, null, true), reservedProfileIds: params.candidateIds ?? [] };
+  }
+  try {
+    const now = Date.now();
+    await reconcile(params.userId, params.prisma, now);
+    const phase = params.phase ?? "preflight";
+    const values = phase === "finalize" ? params.deliveredIds ?? [] : params.candidateIds ?? [];
+    const result = await getRedis().eval(
+      QUOTA_SCRIPT, 3, ...keys(params.userId, params.searchId), phase, now, WINDOW_MS,
+      HOLD_MS, resolvePeopleLimit(), KEY_TTL_SECONDS, ...values
+    ) as [number, number, string, ...string[]];
+    const quotaStatus = status(Number(result[0]), Number(result[1]), result[2] ? Number(result[2]) : null);
+    const reservedProfileIds = phase === "reserve" ? result.slice(3).map(String) : [];
+    return {
+      allowed: phase === "preflight" ? quotaStatus.peopleRemaining > 0 : phase === "reserve" ? reservedProfileIds.length > 0 : true,
+      status: quotaStatus, reservedProfileIds
+    };
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") throw error;
+    return { allowed: true, status: status(0, 0, null), reservedProfileIds: params.candidateIds ?? [] };
+  }
+};
+
 export function formatDiscoverLimitMessage(status: DiscoverQuotaStatus): string {
-  return `You have used today's ${status.dailySearchLimit} Discover searches. You can search again after ${formatQuotaReset(
-    status.resetAt
-  )}.`;
+  return `You've reached your Discover limit of ${status.peopleLimit} people in the last 24 hours. More people will become available as earlier results leave the 24-hour window.`;
 }
 
-/**
- * The limit message for an "Add 10 more" expansion. Same daily allowance, phrased
- * for adding people. Carries the exact reset timestamp (with the date, never a
- * bare time) so it is never timezone-ambiguous.
- */
-export function formatDiscoverExpansionLimitMessage(status: DiscoverQuotaStatus): string {
-  return `You have used today's ${status.dailySearchLimit} Discover searches. You can add more people after your allowance resets on ${formatQuotaReset(
-    status.resetAt
-  )}.`;
-}
-
-/** Format the reset timestamp in UTC so the message is never timezone-ambiguous. */
-export function formatQuotaReset(resetAt: Date): string {
-  const formatted = new Intl.DateTimeFormat("en-US", {
-    timeZone: "UTC",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(resetAt);
-  return `${formatted} UTC`;
-}
+export const formatDiscoverExpansionLimitMessage = formatDiscoverLimitMessage;

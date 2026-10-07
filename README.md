@@ -254,7 +254,7 @@ The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCac
 
 | Layer | Responsibility | Durability and failure behavior |
 | --- | --- | --- |
-| Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
+| Redis | Sanitized exact-intent result payloads, company-version counters, rolling people-quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). Cache misses and outages fall through to Postgres for people lookup; quota coordination fails closed in production when Redis is unavailable. |
 | Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
 | Firecrawl | First external provider after permanent-DB zero | Metadata-only web Search, default 50 raw results per query; strict shared validation and durable query-index continuation. |
 | Tavily | Fallback after Firecrawl exhaustion or availability failure | Existing bounded title-plan queries and durable query-index continuation. |
@@ -303,7 +303,7 @@ Important consequences:
 2. Only a later explicit action with zero unused people may call providers.
 3. Resume Firecrawl at `firecrawlNextQueryIndex`, Tavily at `tavilyNextQueryIndex`, Bright at `brightNextPage`, and Apify at `apifyNextPage`.
 4. Add More executes one bounded provider action. Its per-action cap leaves durable continuation for the next explicit click and reports `exhausted=false` while work remains.
-5. Double-clicks/replays reuse the same durable expansion and daily quota reservation.
+5. Double-clicks/replays reuse the same durable expansion and people-allocation reservation.
 
 #### Firecrawl rollout and verification
 
@@ -743,8 +743,8 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard cap on results per search. Default `25` |
 | `PROSPECT_EXPORT_MAX_ROWS` | Optional | Max rows in one prospect export. Default `5000` |
 | `DISCOVER_RESULTS_PER_SEARCH` | Optional | Fixed people per processed search. Default `10` |
-| `DISCOVER_DAILY_SEARCH_LIMIT` | Optional | Processed searches per user per UTC day. Default `4` |
-| `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only allowlist exempt from the **daily** quota only. Resolved from the session, never a request body |
+| `DISCOVER_PEOPLE_LIMIT_24H` | Optional | Actual new people delivered per user in a rolling 24 hours. Default `40` |
+| `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only allowlist exempt from the **rolling people** quota only. Resolved from the session, never a request body |
 | `DISCOVER_SHARED_CACHE_VERSION` | Optional | Discover intent/result schema version. Default `v1` |
 | `DISCOVER_REDIS_RESULT_TTL_SECONDS` | Optional | TTL for sanitized Redis result acceleration only. Default `900`; does not affect Postgres people |
 | `DISCOVER_ROLE_VECTOR_ENABLED` | Optional | Enables pgvector role matching and safe provider-title expansion. Default `false` |

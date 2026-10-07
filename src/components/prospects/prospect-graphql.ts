@@ -319,10 +319,11 @@ export type ProspectImportResult = {
 
 export type DiscoverQuota = {
   resultsPerSearch: number;
-  dailySearchLimit: number;
-  searchesUsed: number;
-  searchesRemaining: number;
-  resetAt: string;
+  peopleLimit: number;
+  peopleUsed: number;
+  peopleRemaining: number;
+  windowHours: number;
+  nextAvailabilityAt: string | null;
   /** Presentation-only — the backend re-decides exemption server-side. */
   unlimited: boolean;
 };
@@ -356,10 +357,11 @@ export const DISCOVER_QUOTA_QUERY = /* GraphQL */ `
   query DiscoverQuota {
     discoverQuota {
       resultsPerSearch
-      dailySearchLimit
-      searchesUsed
-      searchesRemaining
-      resetAt
+      peopleLimit
+      peopleUsed
+      peopleRemaining
+      windowHours
+      nextAvailabilityAt
       unlimited
     }
   }
@@ -1035,7 +1037,7 @@ export type GraphQLResult<T> = {
   disabled: boolean;
   /** A single user-safe error message, or null. Never raw provider detail. */
   error: string | null;
-  /** The first error's safe extension code (e.g. DISCOVER_DAILY_LIMIT_REACHED). */
+  /** The first error's safe extension code (e.g. DISCOVER_PEOPLE_LIMIT_REACHED). */
   errorCode: string | null;
 };
 
@@ -1049,7 +1051,7 @@ const SAFE_GRAPHQL_ERROR_CODES = new Set([
   "FORBIDDEN",
   "NOT_FOUND",
   "UNAUTHENTICATED",
-  "DISCOVER_DAILY_LIMIT_REACHED",
+  "DISCOVER_PEOPLE_LIMIT_REACHED",
   "DISCOVER_EXPANSION_ALREADY_RUNNING",
   "DISCOVER_EXPANSION_FAILED",
   "DUPLICATE_ROLE_LOCATION"

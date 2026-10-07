@@ -1,280 +1,218 @@
+import type { PrismaClient } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mutable env stand-in so individual tests can flip the exempt allowlist / limit
-// without re-importing the module under test.
-const { mockEnv, redisEvalMock, redisGetMock } = vi.hoisted(() => ({
+const { mockEnv, redisEvalMock, redisPipelineMock } = vi.hoisted(() => ({
   mockEnv: {
     DISCOVER_RESULTS_PER_SEARCH: 10,
-    DISCOVER_DAILY_SEARCH_LIMIT: 4,
+    DISCOVER_PEOPLE_LIMIT_24H: 40,
     DISCOVER_QUOTA_EXEMPT_EMAILS: ""
   } as Record<string, unknown>,
   redisEvalMock: vi.fn(),
-  redisGetMock: vi.fn()
+  redisPipelineMock: vi.fn()
 }));
 
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
-vi.mock("@/lib/redis", () => ({
-  getRedis: () => ({ eval: redisEvalMock, get: redisGetMock })
-}));
+vi.mock("@/lib/redis", () => ({ getRedis: () => ({ eval: redisEvalMock, pipeline: redisPipelineMock }) }));
 
 import {
-  DISCOVER_DAILY_SEARCH_LIMIT,
+  DISCOVER_PEOPLE_LIMIT_24H,
   DISCOVER_RESULTS_PER_SEARCH,
   formatDiscoverLimitMessage,
   getDiscoverQuotaStatus,
   isDiscoverQuotaExempt,
-  reserveDiscoverSearchSlot
+  reserveDiscoverPeople
 } from "@/lib/discover-quota";
 
-const OWNER_EMAIL = "kush.ahir2024@gmail.com";
+const EMAIL = "user@test.dev";
+const start = new Date("2026-10-07T10:15:00.000Z");
+const DAY = 24 * 60 * 60 * 1000;
 
-/**
- * Faithful in-memory emulation of the atomic reserve Lua script, keyed exactly
- * as the real KEYS/ARGV. Synchronous Map mutation gives the same "no two callers
- * over-consume / never double-count one search" guarantee under Promise.all.
- */
-function installQuotaStore() {
-  const daily = new Map<string, number>();
-  const searches = new Set<string>();
+function installStore() {
+  const usage = new Map<string, Map<string, number>>();
+  const holds = new Map<string, Map<string, number>>();
+  const operations = new Map<string, Set<string>>();
   redisEvalMock.mockImplementation((...args: unknown[]) => {
-    const dailyKey = String(args[2]);
-    const searchKey = String(args[3]);
-    const limit = Number(args[4]);
-    if (searches.has(searchKey)) {
-      return [1, daily.get(dailyKey) ?? 0];
+    const usageKey = String(args[2]);
+    const holdsKey = String(args[3]);
+    const operationKey = String(args[4]);
+    const phase = String(args[5]);
+    const now = Number(args[6]);
+    const window = Number(args[7]);
+    const holdMs = Number(args[8]);
+    const limit = Number(args[9]);
+    const candidates = args.slice(11).map(String);
+    const live = usage.get(usageKey) ?? new Map<string, number>();
+    const reserved = holds.get(holdsKey) ?? new Map<string, number>();
+    const own = operations.get(operationKey) ?? new Set<string>();
+    usage.set(usageKey, live);
+    holds.set(holdsKey, reserved);
+    for (const [id, at] of live) if (at <= now - window) live.delete(id);
+    for (const [id, until] of reserved) if (until <= now) reserved.delete(id);
+    if (phase === "reserve") {
+      const selected: string[] = [];
+      for (const id of new Set(candidates)) {
+        if (live.has(id) || (reserved.has(id) && own.has(id))) selected.push(id);
+        else if (!reserved.has(id) && live.size + reserved.size < limit) {
+          reserved.set(id, now + holdMs);
+          own.add(id);
+          selected.push(id);
+        }
+      }
+      operations.set(operationKey, own);
+      const oldest = Math.min(...live.values());
+      return [live.size, reserved.size, Number.isFinite(oldest) ? String(oldest) : "", ...selected];
     }
-    const count = daily.get(dailyKey) ?? 0;
-    if (count >= limit) {
-      return [0, count];
+    if (phase === "finalize") {
+      for (const id of own) {
+        if (candidates.includes(id) && !live.has(id)) live.set(id, now);
+        reserved.delete(id);
+      }
+      operations.delete(operationKey);
     }
-    const next = count + 1;
-    daily.set(dailyKey, next);
-    searches.add(searchKey);
-    return [1, next];
+    const oldest = Math.min(...live.values());
+    return [live.size, reserved.size, Number.isFinite(oldest) ? String(oldest) : ""];
   });
-  redisGetMock.mockImplementation((key: string) => {
-    const value = daily.get(key);
-    return value === undefined ? null : String(value);
-  });
-  return { daily, searches };
+  return { usage, holds };
+}
+
+async function deliver(searchId: string, count: number, prefix = searchId) {
+  const candidateIds = Array.from({ length: count }, (_, i) => `${prefix}-${i}`);
+  const reserved = await reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId, phase: "reserve", candidateIds });
+  await reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId, phase: "finalize", deliveredIds: reserved.reservedProfileIds });
+  return reserved.reservedProfileIds ?? [];
 }
 
 beforeEach(() => {
-  redisEvalMock.mockReset();
-  redisGetMock.mockReset();
-  mockEnv.DISCOVER_RESULTS_PER_SEARCH = 10;
-  mockEnv.DISCOVER_DAILY_SEARCH_LIMIT = 4;
-  mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = "";
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-06-19T09:00:00.000Z"));
+  vi.setSystemTime(start);
+  redisEvalMock.mockReset();
+  redisPipelineMock.mockReset();
+  mockEnv.DISCOVER_PEOPLE_LIMIT_24H = 40;
+  mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = "";
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+afterEach(() => vi.useRealTimers());
 
-describe("exempt allowlist (#13, #14, #16)", () => {
-  it("matches the owner email after trimming and case-insensitively", () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    expect(isDiscoverQuotaExempt(" Kush.Ahir2024@GMAIL.com ")).toBe(true);
-    expect(isDiscoverQuotaExempt(OWNER_EMAIL)).toBe(true);
+describe("rolling Discover people allowance", () => {
+  it("charges actual allocations: 2, 10, 1, then zero", async () => {
+    installStore();
+    expect(await deliver("s1", 2)).toHaveLength(2);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleRemaining).toBe(38);
+    expect(await deliver("s2", 10)).toHaveLength(10);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleRemaining).toBe(28);
+    expect(await deliver("s3", 1)).toHaveLength(1);
+    expect(await deliver("s4", 0)).toHaveLength(0);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleRemaining).toBe(27);
   });
 
-  it("does not exempt another authenticated user", () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    expect(isDiscoverQuotaExempt("someone.else@gmail.com")).toBe(false);
-    expect(isDiscoverQuotaExempt(null)).toBe(false);
-    expect(isDiscoverQuotaExempt("")).toBe(false);
+  it("caps the final allocation and rejects new work at zero", async () => {
+    installStore();
+    await deliver("prior", 34);
+    expect(await deliver("last", 10)).toHaveLength(6);
+    const status = await getDiscoverQuotaStatus("u1", EMAIL);
+    expect(status.peopleUsed).toBe(40);
+    expect(status.peopleRemaining).toBe(0);
+    expect((await reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "next" })).allowed).toBe(false);
   });
 
-  it("supports a comma-separated list of internal testing accounts", () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = `${OWNER_EMAIL}, tester@sendloom.test `;
-    expect(isDiscoverQuotaExempt("TESTER@sendloom.test")).toBe(true);
-    expect(isDiscoverQuotaExempt(OWNER_EMAIL)).toBe(true);
+  it("allows more than four searches when partial results leave capacity", async () => {
+    installStore();
+    for (let i = 0; i < 8; i++) await deliver(`s${i}`, 2);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleRemaining).toBe(24);
   });
 
-  it("exposes the documented default product limits", () => {
+  it("replays a reservation and completed person without another charge", async () => {
+    installStore();
+    const ids = await deliver("s1", 7);
+    expect(await deliver("s1", 7)).toEqual(ids);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleUsed).toBe(7);
+  });
+
+  it("shares the cap across simultaneous searches", async () => {
+    const store = installStore();
+    await deliver("prior", 35);
+    const [a, b] = await Promise.all([
+      reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "a", phase: "reserve", candidateIds: Array.from({ length: 10 }, (_, i) => `a-${i}`) }),
+      reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "b", phase: "reserve", candidateIds: Array.from({ length: 10 }, (_, i) => `b-${i}`) })
+    ]);
+    expect((a.reservedProfileIds?.length ?? 0) + (b.reservedProfileIds?.length ?? 0)).toBe(5);
+    expect(store.holds.get("discover:people:holds:u1")?.size).toBe(5);
+    await Promise.all([
+      reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "a", phase: "finalize", deliveredIds: a.reservedProfileIds }),
+      reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "b", phase: "finalize", deliveredIds: b.reservedProfileIds })
+    ]);
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleUsed).toBe(40);
+  });
+
+  it("releases unused holds when fewer people are actually delivered", async () => {
+    installStore();
+    const reservation = await reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "add-more", phase: "reserve", candidateIds: ["a", "b", "c"] });
+    expect(reservation.reservedProfileIds).toHaveLength(3);
+    await reserveDiscoverPeople({ userId: "u1", email: EMAIL, searchId: "add-more", phase: "finalize", deliveredIds: ["a"] });
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleRemaining).toBe(39);
+  });
+
+  it("expires each person individually after 24 hours, never at midnight", async () => {
+    installStore();
+    await deliver("old", 5);
+    vi.setSystemTime(new Date(start.getTime() + 12 * 60 * 60 * 1000));
+    await deliver("recent", 20);
+    vi.setSystemTime(new Date(start.getTime() + 14 * 60 * 60 * 1000));
+    expect((await getDiscoverQuotaStatus("u1", EMAIL)).peopleUsed).toBe(25);
+    vi.setSystemTime(new Date(start.getTime() + 25 * 60 * 60 * 1000));
+    const status = await getDiscoverQuotaStatus("u1", EMAIL);
+    expect(status.peopleUsed).toBe(20);
+    expect(status.peopleRemaining).toBe(20);
+    expect(status.nextAvailabilityAt?.getTime()).toBe(start.getTime() + 36 * 60 * 60 * 1000);
+  });
+
+  it("reconciles a crashed grant without charging an older reuse or operator repair", async () => {
+    const store = installStore();
+    const recent = [{ personId: "old" }, { personId: "new" }, { personId: "repair" }];
+    const grants = [
+      { personId: "old", allocatedAt: new Date(start.getTime() - DAY - 1), allocationSource: "CACHE", person: { sourceProfileId: "old-profile" } },
+      { personId: "old", allocatedAt: start, allocationSource: "CACHE", person: { sourceProfileId: "old-profile" } },
+      { personId: "new", allocatedAt: start, allocationSource: "PROVIDER", person: { sourceProfileId: "new-profile" } },
+      { personId: "repair", allocatedAt: start, allocationSource: "REPROCESS", person: { sourceProfileId: "repair-profile" } }
+    ];
+    const prisma = { prospectSearchPerson: { findMany: vi.fn().mockResolvedValueOnce(recent).mockResolvedValueOnce(grants) } } as unknown as PrismaClient;
+    redisPipelineMock.mockImplementation(() => {
+      const writes: Array<[string, number, string]> = [];
+      return {
+        zadd(key: string, _nx: string, score: number, member: string) { writes.push([key, score, member]); return this; },
+        expire() { return this; },
+        async exec() {
+          for (const [key, score, member] of writes) {
+            const live = store.usage.get(key) ?? new Map<string, number>();
+            if (!live.has(member)) live.set(member, score);
+            store.usage.set(key, live);
+          }
+        }
+      };
+    });
+    const quota = await getDiscoverQuotaStatus("u1", EMAIL, prisma);
+    expect(quota.peopleUsed).toBe(1);
+    expect(quota.peopleRemaining).toBe(39);
+    expect(store.usage.get("discover:people:usage:u1")?.has("old-profile")).toBe(false);
+  });
+
+  it("keeps the owner exemption and the ten-person operation cap", async () => {
+    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = "OWNER@example.com";
+    expect(isDiscoverQuotaExempt(" owner@EXAMPLE.com ")).toBe(true);
     expect(DISCOVER_RESULTS_PER_SEARCH).toBe(10);
-    expect(DISCOVER_DAILY_SEARCH_LIMIT).toBe(4);
-  });
-});
-
-describe("reserveDiscoverSearchSlot (#6, #7, #8, #10, #11)", () => {
-  it("consumes one slot on the first processed search", async () => {
-    installQuotaStore();
-    const result = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "s1" });
-    expect(result.allowed).toBe(true);
-    expect(result.status.searchesUsed).toBe(1);
-    expect(result.status.searchesRemaining).toBe(3);
-    expect(result.status.unlimited).toBe(false);
-  });
-
-  it("allows four unique searches then rejects the fifth", async () => {
-    installQuotaStore();
-    for (let i = 1; i <= 4; i += 1) {
-      const ok = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: `s${i}` });
-      expect(ok.allowed).toBe(true);
-    }
-    const fifth = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "s5" });
-    expect(fifth.allowed).toBe(false);
-    expect(fifth.status.searchesRemaining).toBe(0);
-    expect(fifth.status.searchesUsed).toBe(4);
-  });
-
-  it("never consumes a second slot when the same search id retries", async () => {
-    installQuotaStore();
-    const first = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "s1" });
-    const retry = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "s1" });
-    const retryAgain = await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "s1" });
-    expect([first.allowed, retry.allowed, retryAgain.allowed]).toEqual([true, true, true]);
-    expect(retryAgain.status.searchesUsed).toBe(1);
-  });
-
-  it("cannot exceed four under concurrent processing of distinct searches", async () => {
-    installQuotaStore();
-    const results = await Promise.all(
-      Array.from({ length: 8 }, (_, i) =>
-        reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: `s${i}` })
-      )
-    );
-    expect(results.filter((r) => r.allowed).length).toBe(4);
-  });
-
-  it("isolates quotas per user", async () => {
-    installQuotaStore();
-    for (let i = 1; i <= 4; i += 1) {
-      await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: `a${i}` });
-    }
-    expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "u1@test.dev", searchId: "a5" })).allowed).toBe(false);
-    // A different user has an untouched window.
-    expect((await reserveDiscoverSearchSlot({ userId: "u2", email: "u2@test.dev", searchId: "b1" })).allowed).toBe(true);
-  });
-
-  it("honors a configurable daily limit", async () => {
-    mockEnv.DISCOVER_DAILY_SEARCH_LIMIT = 2;
-    installQuotaStore();
-    expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s1" })).allowed).toBe(true);
-    expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s2" })).allowed).toBe(true);
-    expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s3" })).allowed).toBe(false);
-  });
-
-  it("counts two role searches for the SAME company as two usage actions (#usage-1, #usage-2)", async () => {
-    // Usage is ACTION-based, keyed only by the search id — never deduplicated by
-    // company, domain, cache key, or the grouped dashboard entry. Walmart +
-    // Recruiter and Walmart + Software Engineer are two search actions.
-    installQuotaStore();
-    const recruiter = await reserveDiscoverSearchSlot({
-      userId: "u1",
-      email: "u1@test.dev",
-      searchId: "walmart-recruiter"
-    });
-    const engineer = await reserveDiscoverSearchSlot({
-      userId: "u1",
-      email: "u1@test.dev",
-      searchId: "walmart-software-engineer"
-    });
-    expect(recruiter.allowed).toBe(true);
-    expect(engineer.allowed).toBe(true);
-    expect(engineer.status.searchesUsed).toBe(2);
-    // "2 of 4 searches remaining today" after two successful searches.
-    expect(engineer.status.searchesRemaining).toBe(2);
-    const readBack = await getDiscoverQuotaStatus("u1", "u1@test.dev");
-    expect(readBack.searchesUsed).toBe(2);
-    expect(readBack.searchesRemaining).toBe(2);
-  });
-});
-
-describe("owner exemption bypasses the daily quota (#14, #15)", () => {
-  it("always allows the exempt account and never consumes a slot", async () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    const store = installQuotaStore();
-    for (let i = 1; i <= 7; i += 1) {
-      const result = await reserveDiscoverSearchSlot({ userId: "owner", email: OWNER_EMAIL, searchId: `s${i}` });
-      expect(result.allowed).toBe(true);
-      expect(result.status.unlimited).toBe(true);
-    }
-    // Redis is never touched for an exempt account.
-    expect(redisEvalMock).not.toHaveBeenCalled();
-    expect(store.daily.size).toBe(0);
-  });
-
-  it("matches the exempt email case-insensitively from the session", async () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    installQuotaStore();
-    const result = await reserveDiscoverSearchSlot({ userId: "owner", email: "KUSH.AHIR2024@gmail.com", searchId: "s1" });
-    expect(result.allowed).toBe(true);
+    expect(DISCOVER_PEOPLE_LIMIT_24H).toBe(40);
+    const result = await reserveDiscoverPeople({ userId: "owner", email: "owner@example.com", searchId: "s", phase: "reserve", candidateIds: ["a"] });
     expect(result.status.unlimited).toBe(true);
+    expect(redisEvalMock).not.toHaveBeenCalled();
   });
 
-  it("still limits a non-exempt account even if it shares the owner's user id space", async () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    installQuotaStore();
-    // A non-exempt email is the only thing that matters — no request field can
-    // grant exemption because the caller passes the session email.
-    for (let i = 1; i <= 4; i += 1) {
-      await reserveDiscoverSearchSlot({ userId: "u1", email: "attacker@evil.test", searchId: `s${i}` });
-    }
-    const blocked = await reserveDiscoverSearchSlot({ userId: "u1", email: "attacker@evil.test", searchId: "s5" });
-    expect(blocked.allowed).toBe(false);
-  });
-});
-
-describe("daily window + status (#12)", () => {
-  it("resets on the next daily window", async () => {
-    installQuotaStore();
-    for (let i = 1; i <= 4; i += 1) {
-      await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: `d1-${i}` });
-    }
-    expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "d1-5" })).allowed).toBe(false);
-
-    // Advance into the next UTC day — a fresh window with a new counter key.
-    vi.setSystemTime(new Date("2026-06-20T09:00:00.000Z"));
-    const nextDay = await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "d2-1" });
-    expect(nextDay.allowed).toBe(true);
-    expect(nextDay.status.searchesUsed).toBe(1);
-  });
-
-  it("reports reset at the next UTC midnight", async () => {
-    installQuotaStore();
-    const status = await getDiscoverQuotaStatus("u1", "x@test.dev");
-    expect(status.resetAt.toISOString()).toBe("2026-06-20T00:00:00.000Z");
-    expect(status.unlimited).toBe(false);
-    expect(status.searchesUsed).toBe(0);
-    expect(status.searchesRemaining).toBe(4);
-  });
-
-  it("reports an unlimited status for the exempt account without consuming", async () => {
-    mockEnv.DISCOVER_QUOTA_EXEMPT_EMAILS = OWNER_EMAIL;
-    installQuotaStore();
-    const status = await getDiscoverQuotaStatus("owner", OWNER_EMAIL);
-    expect(status.unlimited).toBe(true);
-    expect(status.searchesUsed).toBe(0);
-    expect(status.searchesRemaining).toBe(4);
-    expect(redisGetMock).not.toHaveBeenCalled();
-  });
-
-  it("read-only status reflects prior consumption", async () => {
-    installQuotaStore();
-    await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s1" });
-    await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s2" });
-    const status = await getDiscoverQuotaStatus("u1", "x@test.dev");
-    expect(status.searchesUsed).toBe(2);
-    expect(status.searchesRemaining).toBe(2);
-  });
-});
-
-describe("limit message safety (#9)", () => {
-  it("formats a clean message with the reset time and no internals", () => {
+  it("returns a safe limit message", () => {
     const message = formatDiscoverLimitMessage({
-      resultsPerSearch: 10,
-      dailySearchLimit: 4,
-      searchesUsed: 4,
-      searchesRemaining: 0,
-      resetAt: new Date("2026-06-20T00:00:00.000Z"),
-      unlimited: false
+      resultsPerSearch: 10, peopleLimit: 40, peopleUsed: 40, peopleRemaining: 0,
+      windowHours: 24, nextAvailabilityAt: new Date(start.getTime() + DAY), unlimited: false
     });
-    expect(message).toContain("4 Discover searches");
-    expect(message).toMatch(/search again after/i);
-    expect(message).not.toMatch(/discover:quota|redis|userId|u1/i);
+    expect(message).toContain("40 people");
+    expect(message).toContain("24 hours");
+    expect(message).not.toMatch(/discover:people|redis|userId/i);
   });
 });

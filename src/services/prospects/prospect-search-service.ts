@@ -22,7 +22,7 @@ import { discoverPublicErrorCategory } from "@/lib/discover-public-error";
 import {
   formatDiscoverLimitMessage,
   resolveResultsPerSearch,
-  reserveDiscoverSearchSlot,
+  reserveDiscoverPeople,
   type DiscoverQuotaReserver
 } from "@/lib/discover-quota";
 import { env } from "@/lib/env";
@@ -115,7 +115,7 @@ export type ProspectErrorCode =
   | "PROVIDER_ERROR"
   | "NOT_CONFIGURED"
   | "RATE_LIMITED"
-  | "DISCOVER_DAILY_LIMIT_REACHED"
+  | "DISCOVER_PEOPLE_LIMIT_REACHED"
   | "DISCOVER_EXPANSION_ALREADY_RUNNING"
   | "DISCOVER_EXPANSION_FAILED"
   | "DUPLICATE_ROLE_LOCATION";
@@ -270,7 +270,7 @@ export type ProspectSearchServiceDeps = {
   pipelineTimeoutMs?: number;
   /** Injectable for tests; defaults to the Redis-backed per-user limiter. */
   emailFormatRateLimiter?: EmailFormatRateLimiter;
-  /** Injectable for tests; defaults to the Redis-backed atomic daily quota. */
+  /** Injectable for tests; defaults to the Redis-backed atomic people allowance. */
   discoverQuota?: DiscoverQuotaReserver;
   /** Injectable for tests; defaults to the durable shared people store. */
   discoverCache?: DiscoverCachePort;
@@ -352,7 +352,7 @@ export class ProspectSearchService {
     this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
-    this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
+    this.discoverQuota = deps.discoverQuota ?? reserveDiscoverPeople;
     this.discoverCache =
       deps.discoverCache ?? new DiscoverPublicKnowledgeService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
@@ -497,10 +497,10 @@ export class ProspectSearchService {
     const reservation = await this.discoverQuota({
       userId,
       email: options.actorEmail ?? null,
-      searchId: search.id
+      searchId: search.id, prisma: this.prisma
     });
-    if (!reservation.allowed) {
-      throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
+    if (!reservation.allowed && await this.prisma.prospectSearchPerson.count({ where: { searchId: search.id } }) === 0) {
+      throw new ProspectError("DISCOVER_PEOPLE_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
     }
 
     const requestedKey = options.idempotencyKey?.trim() || null;
@@ -559,10 +559,8 @@ export class ProspectSearchService {
    * throw; provider/AI failures are persisted as a FAILED search and returned so
    * the caller can surface a structured failure (status + errorCode).
    *
-   * The daily Discover quota is reserved atomically AFTER ownership/state
-   * validation and BEFORE the database lookup starts. Reservation is idempotent
-   * per search id, so retrying the same search (double-click, network retry,
-   * refresh, or re-processing a FAILED search) never consumes a second slot.
+   * Capacity is checked before provider work. Valid candidates are reserved
+   * atomically just before allocation; only successful new grants are charged.
    */
   async processSearch(
     userId: string,
@@ -609,15 +607,15 @@ export class ProspectSearchService {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
-    // Quota is reserved before database lookup and is idempotent per search id:
-    // retrying a FAILED search (or a network replay) never consumes a second slot.
+    // This preflight checks capacity without consuming it. Allocation reserves
+    // exact candidate identities after lookup and finalizes actual grants.
     const reservation = await this.discoverQuota({
       userId,
       email: options.actorEmail ?? null,
-      searchId: search.id
+      searchId: search.id, prisma: this.prisma
     });
-    if (!reservation.allowed) {
-      throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
+    if (!reservation.allowed && await this.prisma.prospectSearchPerson.count({ where: { searchId: search.id } }) === 0) {
+      throw new ProspectError("DISCOVER_PEOPLE_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
     }
 
     // Processing-attempt bookkeeping. A genuine user-triggered retry (a fresh
@@ -661,6 +659,7 @@ export class ProspectSearchService {
     try {
       const outcome = await withTimeout(
         this.runPipeline(userId, search, budget, {
+          actorEmail: options.actorEmail ?? null,
           signal: pipelineAbort.signal,
           deadlineAtMs: pipelineDeadlineAtMs
         }),
@@ -906,7 +905,7 @@ export class ProspectSearchService {
     userId: string,
     search: ProspectSearch,
     budget: AiCallBudget,
-    request: { signal: AbortSignal; deadlineAtMs: number }
+    request: { signal: AbortSignal; deadlineAtMs: number; actorEmail: string | null }
   ): Promise<RunPipelineResult> {
     // 1) Resolve the company. This runs before the cache check because the
     // canonical fingerprint is keyed on the RESOLVED company identity (so
@@ -1195,7 +1194,8 @@ export class ProspectSearchService {
       search,
       company,
       resolvedDataset,
-      providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE"
+      providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE",
+      request.actorEmail
     );
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
@@ -1700,7 +1700,7 @@ export class ProspectSearchService {
    * company-slug rejection). Guarantees:
    *
    *  - reuses the stored dataset by dataset id — NEVER starts a new actor run;
-   *  - never touches the daily Discover quota (no reservation is made);
+   *  - never touches the rolling Discover people allowance (no reservation is made);
    *  - never runs AI email-format discovery — people inherit the company's
    *    CURRENT canonical format (a manual override applies immediately);
    *  - idempotent: existing allocations are kept and only topped up to the
@@ -1777,7 +1777,7 @@ export class ProspectSearchService {
       search,
       company,
       { emailFormat, people: roleFilteredPeople },
-      "PROVIDER"
+      "REPROCESS"
     );
 
     return this.prisma.prospectSearch.update({
@@ -1814,7 +1814,8 @@ export class ProspectSearchService {
     search: ProspectSearch,
     company: ProspectCompany,
     dataset: ResolvedDataset,
-    allocationSource: "CACHE" | "PROVIDER"
+    allocationSource: "CACHE" | "PROVIDER" | "REPROCESS",
+    quotaEmail?: string | null
   ): Promise<number> {
     const updatedCompany = await this.applyCanonicalCompanyEmailFormat(
       userId,
@@ -1846,9 +1847,9 @@ export class ProspectSearchService {
         : [];
     const allocatedProfileIds = new Set(allocatedPeople.map((person) => person.sourceProfileId));
 
-    const limit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const limit = Math.min(resolveResultsPerSearch(), search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch());
     const capacity = Math.max(0, limit - existingAllocations.length);
-    const selected = await normalizeDiscoverPersonNames(dataset.people
+    let selected = await normalizeDiscoverPersonNames(dataset.people
       .filter((person) => !allocatedProfileIds.has(person.sourceProfileId))
       .slice(0, capacity), { companyName: company.officialName ?? company.name });
 
@@ -1857,97 +1858,128 @@ export class ProspectSearchService {
           where: { userId, sourceProfileId: { in: selected.map((person) => person.sourceProfileId) } }
         })
       : [];
-    const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
-    const originals = selected.map(p => existingByProfileId.get(p.sourceProfileId) ?? p);
-    const correctedEmails = selected.map((p, i) => {
-      const named = { ...originals[i], firstName: p.firstName, lastName: p.lastName, fullName: p.fullName, ...nameStateFields(p) };
-      return { ...p, ...resolveProspectPersonEmail(named, updatedCompany, { allowLowConfidence: false, regenerateExistingInferred: true }) };
-    });
-    const protectedPeople = await protectNameRepairSuppressions(this.prisma, userId, originals, correctedEmails);
-    const emailByProfile = new Map(protectedPeople.map(p => [p.sourceProfileId, p]));
-
-
-    // One position node per category that has allocated people.
-    const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
-    for (const person of selected) {
-      const category = coercePositionCategory(person.positionCategory);
-      if (!rawTitlesByCategory.has(category)) {
-        rawTitlesByCategory.set(category, new Set());
-      }
-      if (person.currentTitle) {
-        rawTitlesByCategory.get(category)!.add(person.currentTitle);
-      }
+    // A pre-existing user grant is free to reuse. New grants are atomically held
+    // by canonical source identity before any user-visible allocation is written.
+    const priorGrants = quotaEmail === undefined || existingPeople.length === 0
+      ? []
+      : await this.prisma.prospectSearchPerson.findMany({
+          where: { userId, personId: { in: existingPeople.map((person) => person.id) } },
+          select: { personId: true }
+        });
+    const priorPersonIds = new Set(priorGrants.map((grant) => grant.personId));
+    const freeProfileIds = new Set(existingPeople.filter((person) => priorPersonIds.has(person.id)).map((person) => person.sourceProfileId));
+    let reservedProfileIds = new Set<string>();
+    if (quotaEmail !== undefined && selected.length > 0) {
+      const candidates = selected.filter((person) => !freeProfileIds.has(person.sourceProfileId)).map((person) => person.sourceProfileId);
+      const reservation = candidates.length
+        ? await this.discoverQuota({ userId, email: quotaEmail, searchId: search.id, phase: "reserve", candidateIds: candidates, prisma: this.prisma })
+        : null;
+      reservedProfileIds = new Set(reservation?.reservedProfileIds ?? candidates);
+      selected = selected.filter((person) => freeProfileIds.has(person.sourceProfileId) || reservedProfileIds.has(person.sourceProfileId));
     }
+    const deliveredIds: string[] = [];
+    try {
+      const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
+      const originals = selected.map(p => existingByProfileId.get(p.sourceProfileId) ?? p);
+      const correctedEmails = selected.map((p, i) => {
+        const named = { ...originals[i], firstName: p.firstName, lastName: p.lastName, fullName: p.fullName, ...nameStateFields(p) };
+        return { ...p, ...resolveProspectPersonEmail(named, updatedCompany, { allowLowConfidence: false, regenerateExistingInferred: true }) };
+      });
+      const protectedPeople = await protectNameRepairSuppressions(this.prisma, userId, originals, correctedEmails);
+      const emailByProfile = new Map(protectedPeople.map(p => [p.sourceProfileId, p]));
 
-    const positionMap = new Map<PositionCategory, string>();
-    for (const [category, titles] of rawTitlesByCategory) {
-      const position = await this.prisma.prospectCompanyPosition.upsert({
-        where: { companyId_category: { companyId: updatedCompany.id, category } },
-        create: {
+
+      // One position node per category that has allocated people.
+      const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
+      for (const person of selected) {
+        const category = coercePositionCategory(person.positionCategory);
+        if (!rawTitlesByCategory.has(category)) {
+          rawTitlesByCategory.set(category, new Set());
+        }
+        if (person.currentTitle) {
+          rawTitlesByCategory.get(category)!.add(person.currentTitle);
+        }
+      }
+
+      const positionMap = new Map<PositionCategory, string>();
+      for (const [category, titles] of rawTitlesByCategory) {
+        const position = await this.prisma.prospectCompanyPosition.upsert({
+          where: { companyId_category: { companyId: updatedCompany.id, category } },
+          create: {
+            companyId: updatedCompany.id,
+            category,
+            displayName: displayNameForCategory(category),
+            rawTitles: Array.from(titles)
+          },
+          update: { displayName: displayNameForCategory(category), rawTitles: Array.from(titles) }
+        });
+        positionMap.set(category, position.id);
+      }
+
+      let processed = existingAllocations.length;
+      let allocationOrder = existingAllocations.length;
+      const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
+      for (const person of selected) {
+        const category = coercePositionCategory(person.positionCategory);
+        const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
+        if (!positionId) {
+          continue;
+        }
+        const protectedPerson = emailByProfile.get(person.sourceProfileId)!;
+        const emailFields = {
+          inferredEmail: protectedPerson.inferredEmail, emailStatus: protectedPerson.emailStatus,
+          emailConfidence: protectedPerson.emailConfidence, emailPattern: protectedPerson.emailPattern,
+          emailSource: protectedPerson.emailSource
+        };
+        const fields = {
           companyId: updatedCompany.id,
-          category,
-          displayName: displayNameForCategory(category),
-          rawTitles: Array.from(titles)
-        },
-        update: { displayName: displayNameForCategory(category), rawTitles: Array.from(titles) }
-      });
-      positionMap.set(category, position.id);
-    }
-
-    let processed = existingAllocations.length;
-    let allocationOrder = existingAllocations.length;
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    for (const person of selected) {
-      const category = coercePositionCategory(person.positionCategory);
-      const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
-      if (!positionId) {
-        continue;
+          positionId,
+          firstName: person.firstName,
+          lastName: person.lastName,
+          fullName: person.fullName,
+        ...nameStateFields(person),
+          currentTitle: person.currentTitle,
+          normalizedTitle: person.normalizedTitle,
+          location: person.location,
+          country: person.country,
+          state: person.state,
+          city: person.city,
+          linkedinUrl: person.linkedinUrl,
+          ...emailFields
+        };
+        const materialized = await this.prisma.prospectPerson.upsert({
+          where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
+          create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
+          update: fields
+        });
+        const existingGrant = await this.prisma.prospectSearchPerson.findFirst({
+          where: { searchId: search.id, personId: materialized.id }
+        });
+        // The grant itself. The (searchId, personId) unique key makes a concurrent
+        // duplicate write converge instead of double-allocating.
+        await this.prisma.prospectSearchPerson.upsert({
+          where: { searchId_personId: { searchId: search.id, personId: materialized.id } },
+          create: {
+            searchId: search.id,
+            personId: materialized.id,
+            userId,
+            allocationOrder,
+            allocationSource
+          },
+          update: {}
+        });
+        if (!existingGrant && reservedProfileIds.has(person.sourceProfileId)) {
+          deliveredIds.push(person.sourceProfileId);
+        }
+        allocationOrder += 1;
+        processed += 1;
       }
-      const protectedPerson = emailByProfile.get(person.sourceProfileId)!;
-      const emailFields = {
-        inferredEmail: protectedPerson.inferredEmail, emailStatus: protectedPerson.emailStatus,
-        emailConfidence: protectedPerson.emailConfidence, emailPattern: protectedPerson.emailPattern,
-        emailSource: protectedPerson.emailSource
-      };
-      const fields = {
-        companyId: updatedCompany.id,
-        positionId,
-        firstName: person.firstName,
-        lastName: person.lastName,
-        fullName: person.fullName,
-      ...nameStateFields(person),
-        currentTitle: person.currentTitle,
-        normalizedTitle: person.normalizedTitle,
-        location: person.location,
-        country: person.country,
-        state: person.state,
-        city: person.city,
-        linkedinUrl: person.linkedinUrl,
-        ...emailFields
-      };
-      const materialized = await this.prisma.prospectPerson.upsert({
-        where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
-        create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
-        update: fields
-      });
-      // The grant itself. The (searchId, personId) unique key makes a concurrent
-      // duplicate write converge instead of double-allocating.
-      await this.prisma.prospectSearchPerson.upsert({
-        where: { searchId_personId: { searchId: search.id, personId: materialized.id } },
-        create: {
-          searchId: search.id,
-          personId: materialized.id,
-          userId,
-          allocationOrder,
-          allocationSource
-        },
-        update: {}
-      });
-      allocationOrder += 1;
-      processed += 1;
+      return processed;
+    } finally {
+      if (quotaEmail !== undefined && reservedProfileIds.size > 0) {
+        await this.discoverQuota({ userId, email: quotaEmail, searchId: search.id, phase: "finalize", deliveredIds, prisma: this.prisma });
+      }
     }
-
-    return processed;
   }
 
   private asStringArray(value: unknown): string[] {

@@ -33,7 +33,7 @@ describe("isReportableCode", () => {
       "UNAUTHENTICATED",
       "NOT_FOUND",
       "DUPLICATE",
-      "DISCOVER_DAILY_LIMIT_REACHED",
+      "DISCOVER_PEOPLE_LIMIT_REACHED",
       "CANCELED"
     ]) {
       expect(isReportableCode(code)).toBe(false);

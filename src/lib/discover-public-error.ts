@@ -55,7 +55,7 @@ const INTERNAL_CODE_TO_CATEGORY: Record<string, DiscoverPublicErrorCategory> = {
   SEARCH_NOT_FOUND: "NOT_AVAILABLE",
   SEARCH_NOT_OWNED: "NOT_AVAILABLE",
   // Product rule, not an infrastructure failure.
-  DISCOVER_DAILY_LIMIT_REACHED: "LIMIT_REACHED"
+  DISCOVER_PEOPLE_LIMIT_REACHED: "LIMIT_REACHED"
 };
 
 const CATEGORY_COPY: Record<DiscoverPublicErrorCategory, Omit<DiscoverPublicError, "category">> = {

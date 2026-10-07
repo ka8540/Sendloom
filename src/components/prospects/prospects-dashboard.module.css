@@ -3348,7 +3348,7 @@
   transform: translateY(0);
 }
 
-/* ---- Header quota chip ("2/4") ------------------------------------------- */
+/* ---- Header quota chip ---------------------------------------------------- */
 
 /* Anchor for the chip + its helper card, with breathing room before the
    Search trigger (the row gap alone reads cramped). */

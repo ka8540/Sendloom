@@ -334,10 +334,11 @@ export const typeDefs = /* GraphQL */ `
 
   type DiscoverQuota {
     resultsPerSearch: Int!
-    dailySearchLimit: Int!
-    searchesUsed: Int!
-    searchesRemaining: Int!
-    resetAt: DateTime!
+    peopleLimit: Int!
+    peopleUsed: Int!
+    peopleRemaining: Int!
+    windowHours: Int!
+    nextAvailabilityAt: DateTime
     unlimited: Boolean!
   }
 

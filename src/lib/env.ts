@@ -177,13 +177,13 @@ const envSchema = z
     // Cost controls — AI web-search discovery calls per user.
     PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: z.coerce.number().int().nonnegative().default(20),
     PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: z.coerce.number().int().nonnegative().default(5),
-    // --- Discover (prospect) daily usage limits ---
+    // --- Discover (prospect) rolling people allowance ---
     // Fixed people per processed Discover search (users cannot choose this).
     DISCOVER_RESULTS_PER_SEARCH: z.coerce.number().int().positive().max(50).default(10),
-    // Processed Discover searches allowed per user per daily window.
-    DISCOVER_DAILY_SEARCH_LIMIT: z.coerce.number().int().positive().max(100).default(4),
+    // New people delivered per user in a rolling 24-hour window.
+    DISCOVER_PEOPLE_LIMIT_24H: z.coerce.number().int().positive().max(1000).default(40),
     // Server-only allowlist (comma-separated, case-insensitive) of accounts
-    // exempt from the daily Discover quota. Never prefix with NEXT_PUBLIC_ and
+    // exempt from the rolling Discover people allowance. Never prefix with NEXT_PUBLIC_ and
     // never expose to the client.
     DISCOVER_QUOTA_EXEMPT_EMAILS: z.string().optional(),
     // --- Discover "Add 10 more" expansion ---
@@ -372,7 +372,7 @@ function readRawEnv() {
     PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT,
     PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT,
     DISCOVER_RESULTS_PER_SEARCH: process.env.DISCOVER_RESULTS_PER_SEARCH,
-    DISCOVER_DAILY_SEARCH_LIMIT: process.env.DISCOVER_DAILY_SEARCH_LIMIT,
+    DISCOVER_PEOPLE_LIMIT_24H: process.env.DISCOVER_PEOPLE_LIMIT_24H,
     DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS,
     DISCOVER_EXPANSION_BATCH_SIZE: process.env.DISCOVER_EXPANSION_BATCH_SIZE,
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: process.env.DISCOVER_EXPANSION_MAX_PROVIDER_PAGES,

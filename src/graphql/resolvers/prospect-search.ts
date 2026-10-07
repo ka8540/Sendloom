@@ -32,7 +32,7 @@ export const prospectSearchQueries = {
    */
   async discoverQuota(_root: unknown, _args: unknown, context: GraphQLContext) {
     const user = requireUser(context);
-    return getDiscoverQuotaStatus(user.id, user.email);
+    return getDiscoverQuotaStatus(user.id, user.email, context.prisma);
   },
 
   async prospectSearch(_root: unknown, args: { id: string }, context: GraphQLContext) {
@@ -459,7 +459,7 @@ export const DiscoverSearchExpansion = {
       return parent.quotaRemaining;
     }
     const user = requireUser(context);
-    return (await getDiscoverQuotaStatus(user.id, user.email)).searchesRemaining;
+    return (await getDiscoverQuotaStatus(user.id, user.email, context.prisma)).peopleRemaining;
   },
   message(parent: DiscoverExpansionParent) {
     if (typeof parent.message === "string") {

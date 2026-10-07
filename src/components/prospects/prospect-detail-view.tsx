@@ -144,7 +144,7 @@ import {
   emailStatusBadge,
   formatDateTime,
   formatPageLabel,
-  formatQuotaReset,
+  formatNextAvailability,
   formatSearchError,
   formatShowingLabel,
   getPageSelectionState,
@@ -2814,9 +2814,9 @@ export function StatusCard({
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
   const quotaBlocked = noResults
-    ? Boolean(quota && !quota.unlimited && quota.searchesRemaining <= 0)
+    ? Boolean(quota && !quota.unlimited && quota.peopleRemaining <= 0)
     : isProcessQuotaBlocked(quota, search.status);
-  const resetLabel = formatQuotaReset(quota);
+  const resetLabel = formatNextAvailability(quota);
   const noResultsContext = [
     search.requestedTitles.length > 0
       ? search.requestedTitles.map((title) => titleCaseLabel(title)).join(", ")
@@ -2855,7 +2855,7 @@ export function StatusCard({
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
       ) : draft && quotaBlocked ? (
         <p className={styles.statusBody}>
-          You&apos;ve used today&apos;s {quota?.dailySearchLimit ?? 4} Discover searches.
+          You&apos;ve reached your Discover allowance for the last 24 hours.
           {resetLabel ? ` ${resetLabel}.` : ""}
         </p>
       ) : draft ? (
@@ -3338,8 +3338,8 @@ function AddMorePeopleDialog({
             <dd>{Math.max(0, peopleCount)}</dd>
           </div>
           <div className={styles.addMoreSummaryRow}>
-            <dt>Searches left</dt>
-            <dd>{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}</dd>
+            <dt>People available</dt>
+            <dd>{quota && !quota.unlimited ? quota.peopleRemaining : "Unlimited"}</dd>
           </div>
         </dl>
 

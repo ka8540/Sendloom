@@ -1,6 +1,6 @@
 "use client";
 
-// Discover LIST page (/prospects). Shows only the Discover header, daily quota,
+// Discover LIST page (/prospects). Shows only the Discover header, people allowance,
 // Refresh, New search, the empty state, and the Search History table. Selecting
 // a row navigates to the dedicated detail page (/prospects/[searchId]); this page
 // never renders company details, the People table, or selection/export actions.
@@ -59,7 +59,7 @@ import {
   formatHistoryShowingLabel,
   formatPageLabel,
   formatQuotaRemaining,
-  formatQuotaReset,
+  formatNextAvailability,
   mergeDiscoverLiveStatesIntoGroups,
   paginateHistoryGroups,
   resolveGroupOpenTarget,
@@ -457,7 +457,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         actions={
           !disabled ? (
             <>
-              {/* Compact "2/4" chip — the full sentence lives in its aria-label
+              {/* Compact "32/40" chip — the full sentence lives in its aria-label
                   and hover/focus helper card, so the action row stays quiet. */}
               <QuotaStatChip quota={quota} variant="headerAction" />
               <button
@@ -1081,19 +1081,19 @@ function NewSearchModal({
 
 function DiscoverUsagePanel({ quota }: { quota: DiscoverQuota | null }) {
   const remaining = formatQuotaRemaining(quota);
-  const resetLabel = formatQuotaReset(quota);
+  const resetLabel = formatNextAvailability(quota);
   return (
     <div className={styles.usagePanel}>
       <span className={styles.usagePanelStrong}>{discoverPerSearchSentence(quota)}</span>
       {quota?.unlimited ? (
-        <span className={styles.usagePanelRow}>Unlimited Discover access</span>
+        <span className={styles.usagePanelRow}>Unlimited Discover allowance</span>
       ) : remaining ? (
         <>
           <span className={styles.usagePanelRow}>{remaining}</span>
           {resetLabel && <span className={styles.usagePanelRow}>{resetLabel}</span>}
         </>
       ) : (
-        <span className={styles.usagePanelRow}>{quota?.dailySearchLimit ?? 4} Discover searches available per day.</span>
+        <span className={styles.usagePanelRow}>{quota?.peopleLimit ?? 40} people available per rolling 24 hours.</span>
       )}
     </div>
   );
