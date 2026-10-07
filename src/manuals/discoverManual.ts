@@ -35,7 +35,7 @@ function listQuotaStep(options: { unlimited: boolean }): ManualStep {
     title: "Your Discover allowance",
     body: options.unlimited
       ? "Your account has unlimited Discover access. Each request still follows the configured result batch size."
-      : "Each search returns up to 10 people. Your remaining daily searches are shown here.",
+      : "Each search returns up to 10 people. Only new people delivered count toward your rolling 24-hour allowance.",
     selector: sel("quota"),
     placement: "bottom",
     optional: true
@@ -228,7 +228,7 @@ export function discoverReadySteps(): ManualStep[] {
     {
       id: "add-more-people",
       title: "Add more unique people",
-      body: "Request up to 10 additional people for this exact search. Existing people will not be repeated, and the request uses one daily Discover search.",
+      body: "Request up to 10 additional people for this exact search. Existing people will not be repeated, and only newly delivered people count toward your rolling 24-hour allowance.",
       selector: sel("add-more-people"),
       placement: "bottom",
       optional: true
@@ -326,7 +326,7 @@ export function discoverDraftSteps(options: { unlimited: boolean }): ManualStep[
     {
       id: "process-action",
       title: "Process this search",
-      body: "Processing starts the people search and uses one daily Discover search. Retrying the same processing request does not use another slot.",
+      body: "Processing starts the people search. Only new people you receive count toward your rolling 24-hour allowance; retries do not charge twice.",
       selector: sel("process-action"),
       placement: "top",
       optional: true
@@ -336,7 +336,7 @@ export function discoverDraftSteps(options: { unlimited: boolean }): ManualStep[
       title: "Your Discover allowance",
       body: options.unlimited
         ? "Your account has unlimited Discover access."
-        : "Each search returns up to 10 people. Your remaining daily searches are shown here.",
+        : "Each search returns up to 10 people. Only new people delivered count toward your rolling 24-hour allowance.",
       selector: sel("quota"),
       placement: "bottom",
       optional: true

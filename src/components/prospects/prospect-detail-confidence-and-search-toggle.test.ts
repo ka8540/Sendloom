@@ -278,33 +278,34 @@ describe("duplicate rules for same-company searches (#14, #15)", () => {
 });
 
 describe("compact header quota chip", () => {
-  const quotaOf = (searchesRemaining: number, dailySearchLimit = 4, unlimited = false): DiscoverQuota => ({
+  const quotaOf = (peopleRemaining: number, peopleLimit = 40, unlimited = false): DiscoverQuota => ({
     resultsPerSearch: 10,
-    dailySearchLimit,
-    searchesUsed: dailySearchLimit - searchesRemaining,
-    searchesRemaining,
-    resetAt: "2026-07-13T00:00:00.000Z",
+    peopleLimit,
+    peopleUsed: peopleLimit - peopleRemaining,
+    peopleRemaining,
+    windowHours: 24,
+    nextAvailabilityAt: "2026-07-13T00:00:00.000Z",
     unlimited
   });
 
   it("formats the compact value from the live quota", () => {
-    expect(formatQuotaChip(quotaOf(2))?.value).toBe("2/4");
-    expect(formatQuotaChip(quotaOf(4))?.value).toBe("4/4");
-    expect(formatQuotaChip(quotaOf(0))?.value).toBe("0/4");
+    expect(formatQuotaChip(quotaOf(2))?.value).toBe("2/40");
+    expect(formatQuotaChip(quotaOf(40))?.value).toBe("40/40");
+    expect(formatQuotaChip(quotaOf(0))?.value).toBe("0/40");
     // A transient negative can never render "-1/4".
-    expect(formatQuotaChip(quotaOf(-1))?.value).toBe("0/4");
-    expect(formatQuotaChip(quotaOf(0, 4, true))?.value).toBe("Unlimited");
+    expect(formatQuotaChip(quotaOf(-1))?.value).toBe("0/40");
+    expect(formatQuotaChip(quotaOf(0, 40, true))?.value).toBe("Unlimited");
     expect(formatQuotaChip(null)).toBeNull();
   });
 
   it("carries the full meaning in the accessible label and helper copy", () => {
     const limited = formatQuotaChip(quotaOf(2))!;
-    expect(limited.ariaLabel).toBe("2 of 4 Discover searches remaining today");
-    expect(limited.tooltip).toBe("2 of 4 searches remaining today.");
-    const unlimited = formatQuotaChip(quotaOf(0, 4, true))!;
-    expect(unlimited.ariaLabel).toBe("Unlimited Discover access");
-    expect(unlimited.tooltip).toBe("Unlimited Discover access.");
-    expect(DISCOVER_QUOTA_TOOLTIP_TITLE).toBe("Discover searches");
+    expect(limited.ariaLabel).toBe("2 of 40 people available in Discover");
+    expect(limited.tooltip).toBe("2 of 40 people available in the rolling 24-hour window.");
+    const unlimited = formatQuotaChip(quotaOf(0, 40, true))!;
+    expect(unlimited.ariaLabel).toBe("Unlimited Discover allowance");
+    expect(unlimited.tooltip).toBe("Unlimited Discover allowance.");
+    expect(DISCOVER_QUOTA_TOOLTIP_TITLE).toBe("Discover allowance");
   });
 
   it("the detail header renders the chip; the dialog footer keeps the full sentence", () => {

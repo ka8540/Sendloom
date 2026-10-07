@@ -47,7 +47,7 @@ import {
   effectiveSearchStatus,
   formatCurrentPeopleLine,
   formatGroupCountLabel,
-  formatSearchesRemainingLine,
+  formatPeopleRemainingLine,
   groupStatusBadge,
   groupedRoleLabels,
   resolveAddMoreTarget,
@@ -72,7 +72,7 @@ import {
   formatPageLabel,
   paginateHistoryGroups,
   formatQuotaRemaining,
-  formatQuotaReset,
+  formatNextAvailability,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
@@ -106,10 +106,11 @@ const STRUCTURED_EMAIL_DECISION = JSON.stringify({
 function quota(overrides: Partial<DiscoverQuota> = {}): DiscoverQuota {
   return {
     resultsPerSearch: 10,
-    dailySearchLimit: 4,
-    searchesUsed: 1,
-    searchesRemaining: 3,
-    resetAt: "2026-06-20T00:00:00.000Z",
+    peopleLimit: 40,
+    peopleUsed: 1,
+    peopleRemaining: 39,
+    windowHours: 24,
+    nextAvailabilityAt: "2026-06-20T00:00:00.000Z",
     unlimited: false,
     ...overrides
   };
@@ -1022,11 +1023,11 @@ describe("Discover quota presentation helpers", () => {
   });
 
   it("shows an ordinary user's remaining count (#3)", () => {
-    expect(formatQuotaRemaining(quota({ searchesUsed: 1, searchesRemaining: 3 }))).toBe(
-      "3 of 4 searches remaining today"
+    expect(formatQuotaRemaining(quota({ peopleUsed: 1, peopleRemaining: 3 }))).toBe(
+      "3 of 40 people available"
     );
-    expect(formatQuotaRemaining(quota({ searchesUsed: 4, searchesRemaining: 0 }))).toBe(
-      "0 of 4 searches remaining today"
+    expect(formatQuotaRemaining(quota({ peopleUsed: 4, peopleRemaining: 0 }))).toBe(
+      "0 of 40 people available"
     );
   });
 
@@ -1043,27 +1044,27 @@ describe("Discover quota presentation helpers", () => {
     const tomorrowReset = new Date(2026, 5, 21, 17, 0, 0);
     const laterReset = new Date(2026, 5, 25, 17, 0, 0);
 
-    expect(formatQuotaReset({ resetAt: todayReset.toISOString() }, now)).toMatch(/^Resets today at .+\d/);
-    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).toMatch(/^Resets tomorrow at .+\d/);
-    expect(formatQuotaReset({ resetAt: laterReset.toISOString() }, now)).toMatch(/^Resets \w.* at .+\d/);
+    expect(formatNextAvailability({ nextAvailabilityAt: todayReset.toISOString() })).toMatch(/^More capacity from /);
+    expect(formatNextAvailability({ nextAvailabilityAt: tomorrowReset.toISOString() })).toMatch(/^More capacity from /);
+    expect(formatNextAvailability({ nextAvailabilityAt: laterReset.toISOString() })).toMatch(/^More capacity from /);
     // Never the old ambiguous "Resets at <time>" with no day.
-    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).not.toMatch(/^Resets at /);
+    expect(formatNextAvailability({ nextAvailabilityAt: tomorrowReset.toISOString() })).not.toMatch(/^Resets at /);
 
-    expect(formatQuotaReset(null)).toBeNull();
-    expect(formatQuotaReset({ resetAt: "not-a-date" })).toBeNull();
+    expect(formatNextAvailability(null)).toBeNull();
+    expect(formatNextAvailability({ nextAvailabilityAt: "not-a-date" })).toBeNull();
   });
 
   it("blocks Process only for a new draft when the quota is spent (#5)", () => {
-    const spent = quota({ searchesUsed: 4, searchesRemaining: 0 });
+    const spent = quota({ peopleUsed: 4, peopleRemaining: 0 });
     expect(isProcessQuotaBlocked(spent, "DRAFT")).toBe(true);
     // A started/failed search already holds its slot, so retry stays enabled.
     expect(isProcessQuotaBlocked(spent, "FAILED")).toBe(false);
     // With slots left, nothing is blocked.
-    expect(isProcessQuotaBlocked(quota({ searchesRemaining: 2 }), "DRAFT")).toBe(false);
+    expect(isProcessQuotaBlocked(quota({ peopleRemaining: 2 }), "DRAFT")).toBe(false);
   });
 
   it("never blocks the exempt account (#6)", () => {
-    const unlimited = quota({ unlimited: true, searchesRemaining: 0 });
+    const unlimited = quota({ unlimited: true, peopleRemaining: 0 });
     expect(isProcessQuotaBlocked(unlimited, "DRAFT")).toBe(false);
     expect(isProcessQuotaBlocked(null, "DRAFT")).toBe(false);
   });
@@ -1150,19 +1151,19 @@ describe("Add 10 more presentation helpers", () => {
   });
 
   it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
-    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), false)).toBeNull();
+    expect(addMoreDisabledReason(quota({ peopleRemaining: 3 }), false)).toBeNull();
     // Disabled (with a reason) while an expansion runs (#5).
-    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), true)).toBe("Adding new people…");
-    // Disabled when no daily quota remains.
-    expect(addMoreDisabledReason(quota({ searchesRemaining: 0 }), false)).toMatch(/used today's Discover searches/);
+    expect(addMoreDisabledReason(quota({ peopleRemaining: 3 }), true)).toBe("Adding new people…");
+    // Disabled when no people capacity remains.
+    expect(addMoreDisabledReason(quota({ peopleRemaining: 0 }), false)).toMatch(/Discover allowance for the last 24 hours/);
     // Exempt accounts are never blocked by quota.
-    expect(addMoreDisabledReason(quota({ unlimited: true, searchesRemaining: 0 }), false)).toBeNull();
+    expect(addMoreDisabledReason(quota({ unlimited: true, peopleRemaining: 0 }), false)).toBeNull();
   });
 
   it("renders the current people count and remaining quota for the dialog (#4)", () => {
     expect(formatCurrentPeopleLine(10)).toBe("Current people: 10");
-    expect(formatSearchesRemainingLine(quota({ searchesRemaining: 3 }))).toBe("Searches remaining today: 3");
-    expect(formatSearchesRemainingLine(quota({ unlimited: true }))).toBe("Searches remaining today: Unlimited");
+    expect(formatPeopleRemainingLine(quota({ peopleRemaining: 3 }))).toBe("People available: 3");
+    expect(formatPeopleRemainingLine(quota({ unlimited: true }))).toBe("People available: Unlimited");
   });
 
   it("keeps the dialog copy short: a one-line subtitle plus a small muted note (#3)", () => {
@@ -1282,10 +1283,10 @@ describe("Add more people dialog UI polish", () => {
     expect(dialogSource).not.toContain("ADD_MORE_DIALOG_BODY");
     expect(dialogSource).toContain("<dt>Role / location</dt>");
     expect(dialogSource).toContain("<dt>Current people</dt>");
-    expect(dialogSource).toContain("<dt>Searches left</dt>");
+    expect(dialogSource).toContain("<dt>People available</dt>");
     // The stat values are untouched.
     expect(dialogSource).toContain("{Math.max(0, peopleCount)}");
-    expect(dialogSource).toContain('{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}');
+    expect(dialogSource).toContain('{quota && !quota.unlimited ? quota.peopleRemaining : "Unlimited"}');
   });
 
   it("keeps the role-group select controlled with its existing options, value, and handler", () => {
@@ -2042,17 +2043,18 @@ describe("location-aware Add 10 more (#28, #29)", () => {
 describe("Search this company helpers", () => {
   const quota: DiscoverQuota = {
     resultsPerSearch: 10,
-    dailySearchLimit: 4,
-    searchesUsed: 4,
-    searchesRemaining: 0,
-    resetAt: "2026-07-12T00:00:00.000Z",
+    peopleLimit: 40,
+    peopleUsed: 40,
+    peopleRemaining: 0,
+    windowHours: 24,
+    nextAvailabilityAt: "2026-07-12T00:00:00.000Z",
     unlimited: false
   };
 
-  it("locks the submit while a search is in flight and when the daily quota is spent (#10)", () => {
+  it("locks the submit while a search is in flight and when the people allowance is spent (#10)", () => {
     expect(companySearchDisabledReason(quota, true)).toBe(COMPANY_SEARCH_LOADING_LABEL);
-    expect(companySearchDisabledReason(quota, false)).toMatch(/used today's Discover searches/);
-    expect(companySearchDisabledReason({ ...quota, searchesRemaining: 2 }, false)).toBeNull();
+    expect(companySearchDisabledReason(quota, false)).toMatch(/Discover allowance for the last 24 hours/);
+    expect(companySearchDisabledReason({ ...quota, peopleRemaining: 2 }, false)).toBeNull();
     // Owner/unlimited accounts are never quota-blocked.
     expect(companySearchDisabledReason({ ...quota, unlimited: true }, false)).toBeNull();
     expect(companySearchDisabledReason(null, false)).toBeNull();

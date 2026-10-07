@@ -699,7 +699,7 @@ All pages require admin authority. Old standalone routes redirect to their new w
 | `DiscoverPublicPerson` | Permanent sanitized public professional knowledge. | Linked to provider batches. | Strong company/profile and normalized-LinkedIn uniqueness; no user, email, or expiry fields. |
 | `DiscoverProviderBatch` / `DiscoverProviderBatchPerson` | Permanent provider intent/run provenance and ordered membership. | Company + normalized role/location intent. | Exact intent is authoritative; continuation metadata is durable, not cache freshness. |
 | `DiscoverSearchCache*` | Deprecated rollout tables. | No production runtime dependency. | Migrated to durable public models; Redis is the only cache. |
-| `DiscoverSearchExpansion` | One "Add 10 more" request against a READY search. | Belongs to `ProspectSearch` and `User`. | Idempotent per client-supplied key, so a retry never consumes a second daily slot. |
+| `DiscoverSearchExpansion` | One "Add 10 more" request against a READY search. | Belongs to `ProspectSearch` and `User`. | Idempotent per client-supplied key, so a retry never charges the same person twice. |
 
 Notable field-level changes in this revision:
 
@@ -1556,8 +1556,7 @@ run.
 **new unique** people.
 `DiscoverExpansionService` runs the workflow (the resolver stays thin): load +
 own the search → confirm READY/NO_RESULTS with canonical company/roles/locations → create an
-idempotent `DiscoverSearchExpansion` record → reserve **one** daily Discover slot
-(idempotent on the expansion id) → read Redis/permanent Postgres → exclude people
+idempotent `DiscoverSearchExpansion` record → check people capacity → read Redis/permanent Postgres → exclude people
 already granted to this search. If any unused DB people exist, return up to the
 batch size and end the action—even when only one or four remain. Only when the
 unused durable count is zero may Add More fetch one Apify continuation page,
@@ -1568,9 +1567,10 @@ Order, idempotency, and concurrency guarantees:
 - **No new history row.** It extends the selected search; existing people,
   selections, and pagination (10/page) are untouched — new people land on later
   pages.
-- **Quota.** One slot per request (cached or not). Retries reuse the expansion id
-  so they never double-charge; a failed expansion can be retried without another
-  charge. The internal/unlimited exemption is unchanged.
+- **Quota.** Add More shares the rolling people allowance. Only new people
+  actually granted consume capacity, including partial batches; zero-result
+  attempts consume none. Retries reuse the expansion id and never charge the
+  same grant twice. The internal/unlimited exemption is unchanged.
 - **Provider continuation.** Normal search is also a provider entry point, but
   only after true permanent-DB zero. Add More resumes the durable
   `DiscoverProviderBatch.providerNextPage` (or page 1 without prior provenance)
@@ -1727,7 +1727,7 @@ default, `--apply` to write) clears only the false-positive
 usable format. It never invents a domain/pattern, never reruns Apify, never
 consumes Discover quota, never touches people rows, and is idempotent.
 
-### 23.2.2 Daily usage limits (Discover quota)
+### 23.2.2 Rolling people allowance (Discover quota)
 
 Discover enforces a fixed, server-side product quota that is independent of (and
 runs alongside) normal API rate limiting:
@@ -1740,33 +1740,32 @@ runs alongside) normal API rate limiting:
   people and may return fewer; it never calls Apify to fill the gap. A
   hand-crafted GraphQL request with `maxResults: 1000` therefore cannot raise the
   user-visible ceiling.
-- **Searches per day.** Ordinary users get `DISCOVER_DAILY_SEARCH_LIMIT`
-  processed searches per daily window (default 4) — a maximum of 40 requested
-  people/day.
-- **Drafts are free; processing consumes the quota.** `createProspectSearch`
-  never touches the quota. `processProspectSearch` reserves one slot atomically
-  **after** ownership/state validation and **before** database lookup starts
-  (`reserveDiscoverSearchSlot` in `src/lib/discover-quota.ts`, a single Lua eval
-  so concurrent requests cannot exceed the limit).
-- **Idempotent per search.** A `discover:quota:search:{searchId}` marker means
-  the same search can be reserved repeatedly without consuming a second slot —
-  double clicks, browser/network retries, refreshing a `READY` search, and
-  re-processing a `FAILED` search are all free. Pagination, Excel export, Add to
-  Imports, and the email-format AI refresh do not consume a Discover slot.
-- **Window + reset.** The counter is a UTC calendar-day fixed window
-  (`discover:quota:{userId}:{quotaDate}`) whose key expires at the next UTC
-  midnight; `resetAt` is exposed so the UI can show when access returns.
-- **Limit error.** When the daily quota is spent, `processProspectSearch`
-  returns a structured `DISCOVER_DAILY_LIMIT_REACHED` GraphQL error whose
-  message carries only the limit and reset time — never Redis keys, counters,
-  user ids, stack traces, or provider details.
-- **Status query.** `discoverQuota` (authenticated) returns
-  `{ resultsPerSearch, dailySearchLimit, searchesUsed, searchesRemaining,
-  resetAt, unlimited }` for the dashboard indicator. `unlimited` is
-  presentation-only — the backend re-decides exemption during processing.
-- **Owner exemption (daily only).** Accounts whose authenticated session email
+- **People in a rolling 24 hours.** Ordinary users can receive up to
+  `DISCOVER_PEOPLE_LIMIT_24H` actual new people (default 40) across any number
+  of searches and Add More actions. A search returning 2 consumes 2; one
+  returning zero consumes none. The 10-person per-search cap remains.
+- **Allocation boundary.** Drafts and candidate lookup are free. Once valid
+  candidates are known, one Redis Lua operation atomically holds available
+  capacity by canonical person identity. Only held candidates may receive a
+  new `ProspectSearchPerson` grant. Finalization commits exactly the successful
+  new grants and releases unused holds. Retry and duplicate grants are not
+  charged twice.
+- **Rolling expiry.** `discover:people:usage:{userId}` is a sorted set scored
+  by grant timestamp. Each person leaves the window individually after 24 hours.
+  Active holds live in `discover:people:holds:{userId}` and expire after a
+  bounded worker timeout. Durable allocation rows reconcile usage after a
+  worker crash. Old `discover:quota:*` keys expire naturally.
+- **Limit error.** No remaining capacity yields structured
+  `DISCOVER_PEOPLE_LIMIT_REACHED` without exposing Redis keys or provider data.
+  Pagination, export, Add to Imports, and email-format refresh use no quota.
+- **Status query.** Authenticated `discoverQuota` returns
+  `{ resultsPerSearch, peopleLimit, peopleUsed, peopleRemaining, windowHours,
+  nextAvailabilityAt, unlimited }`. The timestamp is the next individual
+  grant expiry, or null when unused or exempt.
+
+- **Owner exemption (people allowance only).** Accounts whose authenticated session email
   is in the **server-only** `DISCOVER_QUOTA_EXEMPT_EMAILS` allowlist
-  (comma-separated, compared after trim + lowercase) bypass the daily limit only.
+  (comma-separated, compared after trim + lowercase) bypass the rolling people limit only.
   The email is resolved from the session/user record — never from a request
   body, GraphQL input, or local storage — so a request cannot claim the
   exemption. The allowlist is never sent to the client (no `NEXT_PUBLIC_`
@@ -2095,11 +2094,8 @@ Four concepts are deliberately separate:
   (other users' "Add 10 more" expansions accumulate there). It is never exposed
   through GraphQL, pagination, counts, export, or Imports.
 - **Search action** — one user-triggered company + role + location request (one
-  `ProspectSearch` row). Every successful action consumes **one** daily usage
-  unit — including a same-company different-role search, a cache hit, and an
-  Add 10 More — because usage is action-based (keyed by search/expansion id),
-  never company-, domain-, or cache-key-based. Two Walmart role searches =
-  "2 of 4 searches remaining today".
+  `ProspectSearch` row). Every action charges only genuinely new people granted to this user.
+  Reusing a previously granted person in another role search is free.
 - **User allocation** (`ProspectSearchPerson`). The grant of one person to one
   user-owned search. An initial search allocates **at most `maxResults`
   (10)** people from the resolved dataset in stable provider order — a new user
@@ -2178,8 +2174,8 @@ row, and never creates a duplicate company/person.
   `lastAttemptCompletedAt` — internal only, never in the GraphQL schema). A
   deliberate Retry click sends a fresh `idempotencyKey` (a **new** attempt); a
   browser/network replay of the same key reuses the current attempt (so it is
-  never double-counted). The daily quota stays idempotent per search id, so a
-  retry — click, replay, or refresh — never consumes a second slot, and the
+  never double-counted). People charging stays idempotent per person grant, so a
+  retry — click, replay, or refresh — never charges twice, and the
   per-fingerprint lock means two rapid clicks still trigger at most one provider
   run.
 - **Users only ever see safe product errors.** Internal codes
@@ -3437,7 +3433,7 @@ Deployment order:
 `--limit` bounds rows **per store**. Keyset pagination uses `id`; resume large
 scans with operator-supplied `--after-person ID` and `--after-cache ID`. Cursors
 are not printed to keep output aggregate-only. The script does not call Apify,
-consume daily Discover quota, create people, or touch search allocations. It
+consume Discover people allowance, create people, or touch search allocations. It
 repairs both ProspectPerson and DiscoverSearchCachePerson using exactly the
 production normalizer and current company/cache email-format derivation helper.
 Apply uses `id` plus `updatedAt` optimistic comparisons; concurrent changes are

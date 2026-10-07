@@ -844,11 +844,11 @@ describe("Discover quota GraphQL surface", () => {
     });
   });
 
-  it("maps a DISCOVER_DAILY_LIMIT_REACHED service error to a safe structured error (#9)", async () => {
+  it("maps a DISCOVER_PEOPLE_LIMIT_REACHED service error to a safe structured error (#9)", async () => {
     const processSearch = vi.fn(async () => {
       throw new ProspectError(
-        "DISCOVER_DAILY_LIMIT_REACHED",
-        "You have used today's 4 Discover searches. You can search again after Jun 20, 2026, 12:00 AM UTC."
+        "DISCOVER_PEOPLE_LIMIT_REACHED",
+        "You've reached your Discover limit of 40 people in the last 24 hours."
       );
     });
 
@@ -866,8 +866,8 @@ describe("Discover quota GraphQL surface", () => {
     });
 
     expect(result.data?.processProspectSearch ?? null).toBeNull();
-    expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_DAILY_LIMIT_REACHED");
-    expect(result.errors?.[0]?.message).toContain("Discover searches");
+    expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_PEOPLE_LIMIT_REACHED");
+    expect(result.errors?.[0]?.message).toContain("40 people");
     // The authenticated session email is what reaches the service — never input.
     expect(processSearch).toHaveBeenCalledWith("user_A", "s1", {
       actorEmail: "a@example.com",
@@ -878,7 +878,7 @@ describe("Discover quota GraphQL surface", () => {
   it("requires authentication for the discoverQuota query", async () => {
     const result = await graphql({
       schema: prospectSchema,
-      source: `{ discoverQuota { searchesRemaining } }`,
+      source: `{ discoverQuota { peopleRemaining } }`,
       contextValue: makeContext({ user: null })
     });
     expect(result.data?.discoverQuota ?? null).toBeNull();

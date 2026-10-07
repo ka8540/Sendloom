@@ -51,15 +51,16 @@ const QUOTA_RESET = new Date("2026-06-21T00:00:00.000Z");
 function quotaStatus(used: number, limit: number, unlimited = false): DiscoverQuotaStatus {
   return {
     resultsPerSearch: 10,
-    dailySearchLimit: limit,
-    searchesUsed: used,
-    searchesRemaining: Math.max(0, limit - used),
-    resetAt: QUOTA_RESET,
+    peopleLimit: limit,
+    peopleUsed: used,
+    peopleRemaining: Math.max(0, limit - used),
+    windowHours: 24,
+    nextAvailabilityAt: QUOTA_RESET,
     unlimited
   };
 }
 
-/** In-memory quota reserver: idempotent per (the passed) id, limited per user. */
+/** Legacy action gate test double for expansion state tests; people accounting is tested separately. */
 function makeQuotaReserver(opts: { limit?: number; exemptEmails?: string[] } = {}) {
   const limit = opts.limit ?? 4;
   const exempt = new Set((opts.exemptEmails ?? []).map((email) => email.trim().toLowerCase()));
@@ -1369,7 +1370,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it("materializes 10 unused cached people without calling Apify and consumes one slot (#1, #4, #5, #9, #10)", async () => {
+  it("materializes 10 unused cached people without calling Apify and uses the shared allowance (#1, #4, #5, #9, #10)", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -1388,7 +1389,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(result.addedCount).toBe(10);
     expect(result.totalPeopleCount).toBe(20); // 10 existing + 10 new (#20)
     expect(runner.run).not.toHaveBeenCalled(); // cache covered it (#10)
-    expect(quota.consumed.size).toBe(1); // exactly one slot (#4, #5)
+    expect(quota.consumed.size).toBe(1); // one gate action (#4, #5)
     // People count on the search row increased (#20); no new history row (#27).
     expect(prisma._state.searches).toHaveLength(1);
     expect(prisma._state.searches[0].totalProcessed).toBe(20);
@@ -1612,7 +1613,24 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(2);
   });
 
-  it("retrying the same expansion consumes no extra slot and adds no extra people (#6, #22)", async () => {
+  it("charges only the three new people returned by a partial Add More", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache(cachePeople("cache", 3));
+    const quota = vi.fn<DiscoverQuotaReserver>(async ({ phase, candidateIds }) => ({
+      allowed: true,
+      status: quotaStatus(0, 40),
+      reservedProfileIds: phase === "reserve" ? candidateIds : []
+    }));
+    const { service } = buildService({ quota: { reserve: quota, status: async () => quotaStatus(3, 40), calls: [], consumed: new Set<string>() } });
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "partial" });
+    expect(result.addedCount).toBe(3);
+    expect(quota).toHaveBeenCalledWith(expect.objectContaining({ phase: "reserve", candidateIds: expect.arrayContaining(["cache_1", "cache_2", "cache_3"]) }));
+    expect(quota).toHaveBeenCalledWith(expect.objectContaining({ phase: "finalize", deliveredIds: expect.arrayContaining(["cache_1", "cache_2", "cache_3"]) }));
+  });
+
+  it("retrying the same expansion adds no extra people charge and adds no extra people (#6, #22)", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -1631,24 +1649,16 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.searches[0].totalProcessed).toBe(20);
   });
 
-  it("blocks the fifth daily operation for a regular user when the quota is four (#7)", async () => {
+  it("blocks Add More when no people capacity remains", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
-    seedCache(cachePeople("cache", 80));
-    const quota = makeQuotaReserver({ limit: 4 });
-    // Pre-consume three slots (initial search + two expansions).
-    await quota.reserve({ userId: USER_ID, email: "u@e.com", searchId: "prior_1" });
-    await quota.reserve({ userId: USER_ID, email: "u@e.com", searchId: "prior_2" });
-    await quota.reserve({ userId: USER_ID, email: "u@e.com", searchId: "prior_3" });
+    seedCache(cachePeople("cache", 10));
+    const quota = makeQuotaReserver({ limit: 0 });
     const { service } = buildService({ quota });
-
-    // Fourth (this expansion) is allowed.
-    await service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "k4" });
-    // Fifth is blocked.
     await expect(
-      service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "k5" })
-    ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
+      service.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "blocked" })
+    ).rejects.toMatchObject({ code: "DISCOVER_PEOPLE_LIMIT_REACHED" });
   });
 
   it("keeps the internal exemption working (no slot consumed) (#8)", async () => {
@@ -1750,7 +1760,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
     const retry = await retryService.addMorePeople({ userId: USER_ID, actorEmail: "u@e.com", searchId: SEARCH_ID, idempotencyKey: "fail" });
     expect(retry.addedCount).toBe(6);
-    expect(quota.consumed.size).toBe(1); // still one slot total
+    expect(quota.consumed.size).toBe(1); // still one gate action total
   });
 
   it("reports exhaustion when the provider runs out and blocks future expansion without charging (#23)", async () => {
