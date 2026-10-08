@@ -10,6 +10,7 @@ import {
   OpenAIPersonIdentityResolver,
   type IdentitySearchRequest,
   type PersonIdentityResolutionInput,
+  type PersonIdentityResolverPort,
   type PersonIdentitySearchCaller,
   acceptResolution,
   buildIdentityResolutionInput,
@@ -232,7 +233,7 @@ describe("resolveIncompleteIdentities", () => {
   const context = (resolve: ReturnType<typeof vi.fn>, budget?: AiCallBudget) => ({
     companyName: "Apple",
     companyDomain: "apple.com",
-    resolver: { resolve },
+    resolver: { resolve: resolve as PersonIdentityResolverPort["resolve"] },
     budget
   });
 
