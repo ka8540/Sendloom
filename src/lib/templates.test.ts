@@ -5,6 +5,7 @@ import {
   convertTemplateBody,
   extractTemplateVariables,
   renderTemplate,
+  renderTemplateContent,
   renderTemplatePreview,
   renderTemplateSubjectPreview,
   templateContentToPlainText,
@@ -18,6 +19,25 @@ describe("templates", () => {
 
   it("renders template variables", () => {
     expect(renderTemplate("Hi {{name}}", { name: "Ari" })).toBe("Hi Ari");
+  });
+
+  it.each(["FIRST_NAME", "First_Name", "first_name", "FiRsT_NaMe"])(
+    "renders %s from a differently cased mapped field",
+    (variable) => {
+      expect(renderTemplate(`Hi {{ ${variable} }}`, { first_name: "John" })).toBe("Hi John");
+      expect(renderTemplateSubjectPreview(`Hi {{${variable}}}`, { first_name: "John" })).toBe("Hi John");
+    }
+  );
+
+  it("does not use fuzzy field matching", () => {
+    expect(renderTemplate("{{firstname}}|{{first_name}}", { first_name: "John" })).toBe("|John");
+  });
+
+  it("resolves mixed-case variables in plain text, HTML, and JSON bodies", () => {
+    const payload = { first_name: "John" };
+    expect(renderTemplateContent("PLAIN_TEXT", "Hi {{FIRST_NAME}}", payload)).toBe("<p>Hi John</p>");
+    expect(renderTemplateContent("HTML", "<p>Hi {{FIRST_NAME}}</p>", payload)).toBe("<p>Hi John</p>");
+    expect(renderTemplateContent("JSON", '{"greeting":"Hi {{FIRST_NAME}}"}', payload)).toBe("<p>Hi John</p>");
   });
 
   it("renders subject preview variables with sample values", () => {

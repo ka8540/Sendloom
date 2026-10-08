@@ -125,7 +125,7 @@ vi.mock("@/lib/storage", () => ({
   deleteObject: vi.fn(async () => {})
 }));
 
-const { createImport, saveTemplateFields } = await import("@/services/imports");
+const { createImport, saveMapping, saveTemplateFields } = await import("@/services/imports");
 
 const CSV = Buffer.from(
   ["First Name,Last Name,Email,Company", "Ada,Lovelace,ada@esri.com,Esri", "Alan,Turing,alan@esri.com,Esri"].join("\n"),
@@ -140,6 +140,16 @@ beforeEach(() => {
 });
 
 describe("createImport", () => {
+  it("rejects columns that collide after normalization before storing the import", async () => {
+    const collidingCsv = Buffer.from("first_name,FIRST_NAME,email\nJohn,Jane,john@example.com", "utf8");
+
+    await expect(createImport("people.csv", "text/csv", collidingCsv, "user_1")).rejects.toThrow(
+      /Ambiguous template fields|unique field names/
+    );
+    expect(db.imports).toHaveLength(0);
+    expect(db.mappings).toHaveLength(0);
+  });
+
   it("creates a manual upload as PROCESSED with default activated columns", async () => {
     const created = await createImport("people.csv", "text/csv", CSV, "user_1");
 
@@ -147,6 +157,14 @@ describe("createImport", () => {
     expect(db.imports).toHaveLength(1);
     expect(db.mappings).toHaveLength(1);
     expect(Object.keys(db.mappings[0].variableMap).length).toBeGreaterThan(0);
+  });
+
+  it("preserves original import column casing while mapping its normalized name", async () => {
+    const csv = Buffer.from("First_Name,Email\nJohn,john@example.com", "utf8");
+    const created = await createImport("people.csv", "text/csv", csv, "user_1");
+
+    expect(created.columns[0]).toMatchObject({ sourceName: "First_Name", normalized: "first_name" });
+    expect(db.mappings[0].variableMap.first_name).toBe("first_name");
   });
 
   it("stages a Discover import as pending with no activated columns", async () => {
@@ -221,5 +239,17 @@ describe("saveTemplateFields on a processed manual upload", () => {
     expect(db.imports[0].status).toBe("PROCESSED");
     expect(db.mappings).toHaveLength(1);
     expect(db.mappings[0].variableMap).toEqual({ email: "email", company: "company" });
+  });
+});
+
+describe("saveMapping", () => {
+  it("rejects colliding template keys without changing the saved mapping", async () => {
+    const created = await createImport("people.csv", "text/csv", CSV, "user_1");
+    const previousMap = { ...db.mappings[0].variableMap };
+
+    await expect(
+      saveMapping(created.id, "user_1", { email: "email" }, { first_name: "first_name", FIRST_NAME: "last_name" })
+    ).rejects.toThrow(/Ambiguous template fields/);
+    expect(db.mappings[0].variableMap).toEqual(previousMap);
   });
 });

@@ -1,5 +1,6 @@
 import sanitizeHtml from "sanitize-html";
 
+import { buildTemplateFieldLookup, normalizeTemplateFieldName } from "@/lib/template-fields";
 import type { MergeVariables } from "@/lib/types";
 
 export const TEMPLATE_FORMATS = ["PLAIN_TEXT", "HTML", "JSON"] as const;
@@ -405,10 +406,17 @@ export function extractTemplateVariables(input: string) {
 
 export function buildTemplatePreviewPayload(variables: string[], payload: MergeVariables = {}) {
   const previewPayload: MergeVariables = { ...payload };
+  const providedValues = buildTemplateFieldLookup(payload);
+  const payloadKeys = buildTemplateFieldLookup(Object.fromEntries(Object.keys(payload).map((key) => [key, key])));
 
   for (const variable of variables) {
-    if (!hasPreviewValue(previewPayload[variable])) {
-      previewPayload[variable] = getTemplatePreviewFallback(variable);
+    const normalized = normalizeTemplateFieldName(variable);
+    if (!hasPreviewValue(providedValues.get(normalized))) {
+      const fallback = getTemplatePreviewFallback(variable);
+      const key = payloadKeys.get(normalized) ?? variable;
+      previewPayload[key] = fallback;
+      payloadKeys.set(normalized, key);
+      providedValues.set(normalized, fallback);
     }
   }
 
@@ -416,8 +424,9 @@ export function buildTemplatePreviewPayload(variables: string[], payload: MergeV
 }
 
 export function renderTemplate(input: string, payload: MergeVariables) {
+  const values = buildTemplateFieldLookup(payload);
   return input.replace(VARIABLE_PATTERN, (_, key) => {
-    const value = payload[key];
+    const value = values.get(normalizeTemplateFieldName(key));
     return value === undefined || value === null ? "" : String(value);
   });
 }
