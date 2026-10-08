@@ -396,7 +396,7 @@ describe("BrightDataGoogleSearchProvider", () => {
     await expect(provider.search("private search query", { page: 1, requestedLocations: [] }))
       .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "ORGANIC_ARRAY_MISSING" });
 
-    const logged = info.mock.calls
+    const logged = (info.mock.calls as unknown[][])
       .map((call) => String(call[0]))
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -456,7 +456,7 @@ describe("BrightDataGoogleSearchProvider", () => {
 
     await expect(provider.search("query", { page: 1, requestedLocations: [] }))
       .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "ORGANIC_ARRAY_MISSING" });
-    const shape = info.mock.calls
+    const shape = (info.mock.calls as unknown[][])
       .map((call) => String(call[0]))
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as Record<string, unknown>)
@@ -485,7 +485,7 @@ describe("BrightDataGoogleSearchProvider", () => {
 
     await expect(provider.search("query", { page: 1, requestedLocations: [] }))
       .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "ORGANIC_ARRAY_MISSING" });
-    const shape = info.mock.calls
+    const shape = (info.mock.calls as unknown[][])
       .map((call) => String(call[0]))
       .filter((line) => line.startsWith("{"))
       .map((line) => JSON.parse(line) as Record<string, unknown>)
