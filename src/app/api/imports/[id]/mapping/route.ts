@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { TemplateFieldCollisionError } from "@/lib/template-fields";
 import { saveMapping } from "@/services/imports";
 
 const schema = z.object({
@@ -18,7 +19,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { id } = await context.params;
   const payload = schema.parse(await request.json());
-  const mapping = await saveMapping(id, auth.user.id, payload.reservedFieldMap, payload.variableMap);
+  let mapping;
+  try {
+    mapping = await saveMapping(id, auth.user.id, payload.reservedFieldMap, payload.variableMap);
+  } catch (error) {
+    if (error instanceof TemplateFieldCollisionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 
   await recordAuditEvent({
     actor: { id: auth.user.id, email: auth.user.email },

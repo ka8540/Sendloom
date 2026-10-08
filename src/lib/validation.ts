@@ -2,6 +2,7 @@ import { createFailureCheck, type FailureCheckResult } from "@/lib/failures";
 import { buildMergePayload } from "@/lib/mapping";
 import { getNextRunDate } from "@/lib/schedule";
 import { getObjectBuffer } from "@/lib/storage";
+import { buildTemplateFieldLookup, normalizeTemplateFieldName } from "@/lib/template-fields";
 import { extractTemplateVariables, renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import type { CampaignValidationReport, CampaignValidationSummary, ValidationIssue } from "@/lib/types";
 import { isValidEmail } from "@/lib/utils";
@@ -83,6 +84,7 @@ export function buildValidationReport(params: ValidationParams): CampaignValidat
   let duplicateRecipients = 0;
 
   for (const row of params.rows) {
+    const payloadValues = buildTemplateFieldLookup(row.payload);
     const email = row.email?.trim().toLowerCase() ?? null;
 
     if (!email) {
@@ -112,7 +114,7 @@ export function buildValidationReport(params: ValidationParams): CampaignValidat
     }
 
     for (const variable of requiredVariables) {
-      if (!(variable in row.payload)) {
+      if (!payloadValues.has(normalizeTemplateFieldName(variable))) {
         issues.push({
           code: "MISSING_VARIABLE",
           message: `Template variable "${variable}" is missing in mapped data.`,
@@ -187,8 +189,9 @@ export function getUnresolvedTemplateVariables(
   variables: string[],
   payload: Record<string, unknown>
 ) {
+  const values = buildTemplateFieldLookup(payload);
   return variables.filter((variable) => {
-    const value = payload[variable];
+    const value = values.get(normalizeTemplateFieldName(variable));
     return value === undefined || value === null || String(value).trim() === "";
   });
 }
@@ -312,7 +315,7 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
   const importRecord = params.importRecord;
   const templateSnapshot = params.templateSnapshot;
   const mappingSnapshot = params.mappingSnapshot ?? {};
-  const importColumnNames = new Set(importRecord?.columns.map((column) => column.normalized) ?? []);
+  const importColumnNames = new Set(importRecord?.columns.map((column) => normalizeTemplateFieldName(column.normalized)) ?? []);
   const mappedFieldNames = getMappedFieldNames(mappingSnapshot);
   const templateVariables = getTemplateVariables(templateSnapshot);
 
@@ -382,7 +385,7 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
     }
 
     const emailField = mappingSnapshot.reservedFieldMap?.email;
-    if (!emailField || !importColumnNames.has(emailField)) {
+    if (!emailField || !importColumnNames.has(normalizeTemplateFieldName(emailField))) {
       checks.push(
         createFailureCheck("MISSING_MAPPING", "IMPORT", {
           message: "Recipient email mapping is missing.",
@@ -391,7 +394,7 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
       );
     }
 
-    const missingMappedFields = [...mappedFieldNames].filter((fieldName) => !importColumnNames.has(fieldName));
+    const missingMappedFields = [...mappedFieldNames].filter((fieldName) => !importColumnNames.has(normalizeTemplateFieldName(fieldName)));
     if (missingMappedFields.length > 0) {
       checks.push(
         createFailureCheck("MISSING_MAPPING", "IMPORT", {
@@ -430,8 +433,8 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
   const mappedTemplateVariables = new Set([
     ...Object.keys(mappingSnapshot.variableMap ?? {}),
     ...Object.keys(mappingSnapshot.reservedFieldMap ?? {})
-  ]);
-  const unmappedTemplateVariables = templateVariables.filter((variable) => !mappedTemplateVariables.has(variable));
+  ].map(normalizeTemplateFieldName));
+  const unmappedTemplateVariables = templateVariables.filter((variable) => !mappedTemplateVariables.has(normalizeTemplateFieldName(variable)));
   if (unmappedTemplateVariables.length > 0) {
     checks.push(
       createFailureCheck("MISSING_TEMPLATE_VARIABLE", "TEMPLATE", {

@@ -128,6 +128,70 @@ describe("validation", () => {
     expect(checks).toContainEqual(expect.objectContaining({ code: "UNRESOLVED_TEMPLATE_VARIABLE", severity: "WARNING" }));
   });
 
+  it.each(["FIRST_NAME", "First_Name", "first_name", "FiRsT_NaMe"])(
+    "validates a sequence using %s against a first_name mapping",
+    async (variable) => {
+      const payload = { email: "test@example.com", first_name: "John" };
+      const subject = `Hi {{${variable}}}`;
+      const report = buildValidationReport({
+        rows: [{ rowIndex: 1, email: payload.email, payload }],
+        templateSubject: subject,
+        templateHtml: `<p>${subject}</p>`,
+        suppressedEmails: new Set()
+      });
+      const checks = await buildStructuredValidationChecks({
+        campaignId: "campaign-1",
+        senderProfile: { fromEmail: "sender@example.com", oauthRefreshToken: "token" },
+        importRecord: {
+          rowCount: 1,
+          rows: [{ rowIndex: 1, email: payload.email, normalized: payload }],
+          columns: [{ normalized: "email" }, { normalized: "first_name" }]
+        },
+        mappingRecord: { importId: "import-1" },
+        templateRecord: {},
+        templateSnapshot: { subject, htmlBody: `<p>${subject}</p>`, format: "HTML" },
+        mappingSnapshot: {
+          reservedFieldMap: { email: "email" },
+          variableMap: { first_name: "first_name" }
+        },
+        scheduleType: "immediate",
+        report
+      });
+
+      expect(report.issues).not.toContainEqual(expect.objectContaining({ code: "MISSING_VARIABLE" }));
+      expect(checks).not.toContainEqual(expect.objectContaining({ code: "MISSING_TEMPLATE_VARIABLE" }));
+      expect(checks).not.toContainEqual(expect.objectContaining({ code: "UNRESOLVED_TEMPLATE_VARIABLE" }));
+    }
+  );
+
+  it("still reports FIRST_NAME as unmapped when only last_name is mapped", async () => {
+    const payload = { email: "test@example.com", last_name: "Doe" };
+    const report = buildValidationReport({
+      rows: [{ rowIndex: 1, email: payload.email, payload }],
+      templateSubject: "Hi {{FIRST_NAME}}",
+      templateHtml: "<p>Hi {{FIRST_NAME}}</p>",
+      suppressedEmails: new Set()
+    });
+    const checks = await buildStructuredValidationChecks({
+      campaignId: "campaign-1",
+      senderProfile: { fromEmail: "sender@example.com", oauthRefreshToken: "token" },
+      importRecord: {
+        rowCount: 1,
+        rows: [{ rowIndex: 1, email: payload.email, normalized: payload }],
+        columns: [{ normalized: "email" }, { normalized: "last_name" }]
+      },
+      mappingRecord: { importId: "import-1" },
+      templateRecord: {},
+      templateSnapshot: { subject: "Hi {{FIRST_NAME}}", htmlBody: "<p>Hi {{FIRST_NAME}}</p>", format: "HTML" },
+      mappingSnapshot: { reservedFieldMap: { email: "email" }, variableMap: { last_name: "last_name" } },
+      scheduleType: "immediate",
+      report
+    });
+
+    expect(report.issues).toContainEqual(expect.objectContaining({ code: "MISSING_VARIABLE" }));
+    expect(checks).toContainEqual(expect.objectContaining({ code: "MISSING_TEMPLATE_VARIABLE" }));
+  });
+
   it("detects invalid recipient emails", async () => {
     const report = buildValidationReport({
       rows: [{ rowIndex: 1, email: "not-an-email", payload: { email: "not-an-email" } }],

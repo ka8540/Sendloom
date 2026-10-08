@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
+import { TemplateFieldCollisionError } from "@/lib/template-fields";
 import { createImport } from "@/services/imports";
 
 const MAX_IMPORT_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -47,7 +48,15 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const importRecord = await createImport(file.name, file.type, buffer, auth.user.id);
+  let importRecord;
+  try {
+    importRecord = await createImport(file.name, file.type, buffer, auth.user.id);
+  } catch (error) {
+    if (error instanceof TemplateFieldCollisionError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
 
   await recordAuditEvent({
     actor: { id: auth.user.id, email: auth.user.email },

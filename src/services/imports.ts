@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { buildImportKey, deleteObject, uploadObject } from "@/lib/storage";
+import { assertUniqueTemplateFieldNames, TemplateFieldCollisionError } from "@/lib/template-fields";
 import { inferSampleType, parseSpreadsheet } from "@/lib/uploads";
 import { normalizeHeader } from "@/lib/utils";
 
@@ -55,6 +56,10 @@ export async function createImport(
 ) {
   const parsed = parseSpreadsheet(fileName, content);
   const normalizedColumns = parsed.columns.map((column) => normalizeHeader(column));
+  assertUniqueTemplateFieldNames(parsed.columns);
+  if (new Set(normalizedColumns).size !== normalizedColumns.length) {
+    throw new TemplateFieldCollisionError("Import columns must have unique field names after normalization.");
+  }
   const pendingFieldSelection = options.pendingFieldSelection ?? false;
 
   const importId = randomUUID();
@@ -157,6 +162,10 @@ export async function saveMapping(
   variableMap: Record<string, string>
 ) {
   await getOwnedImport(importId, userId);
+  assertUniqueTemplateFieldNames([
+    ...Object.keys(variableMap),
+    ...Object.keys(reservedFieldMap)
+  ]);
 
   const existing = await prisma.mapping.findFirst({
     where: {
