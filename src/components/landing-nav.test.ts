@@ -121,12 +121,17 @@ describe("landing integration marks", () => {
 });
 
 describe("landing DATA cards", () => {
-  it("renders one three-card stack with the reference demo offsets", () => {
-    expect(PAGE_SOURCE.match(/<DisplayCards cards={dataCards}/g)).toHaveLength(1);
-    expect(PAGE_SOURCE).toContain("translate-x-12 translate-y-10");
-    expect(PAGE_SOURCE).toContain("translate-x-24 translate-y-20");
-    expect(PAGE_SOURCE.match(/<Sparkles className="size-4 text-blue-300" \/>/g)).toHaveLength(3);
-    expect(PAGE_SOURCE).not.toContain("data-story-card");
+  it("uses the original three product windows in the animated stack", () => {
+    const cards = readFileSync("src/components/data-product-cards.tsx", "utf8");
+    expect(PAGE_SOURCE).toContain("<DataProductCards />");
+    expect(cards).toContain("Map fields");
+    expect(cards).toContain("12 results");
+    expect(cards).toContain("Review contacts");
+    expect(cards.match(/<article key=/g)).toHaveLength(3);
+    expect(cards).toContain("aria-pressed={selected === index}");
+    expect(LANDING_CSS).toContain("--deck-lift-y: -40px");
+    expect(LANDING_CSS).toContain("--deck-lift-y: -4px");
+    expect(LANDING_CSS).toContain("--deck-lift-y: 40px");
   });
 });
 
@@ -140,6 +145,6 @@ describe("landing production fallback", () => {
     expect(LANDING_CSS).toContain(".dataVisual");
     expect(LANDING_CSS).toContain(".dataCopy");
     expect(LANDING_CSS).toContain('.dataStory[data-story="enhanced"] .dataStep');
-    expect(LANDING_CSS).not.toContain(".dataCard");
+    expect(LANDING_CSS).toContain(".dataCard");
   });
 });

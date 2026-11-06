@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Sparkles } from "lucide-react";
 import Link from "next/link";
 
 import { BrandText } from "@/components/brand-text";
@@ -11,7 +10,7 @@ import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { LandingProductPreview } from "@/components/landing-product-preview";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
-import DisplayCards from "@/components/ui/display-cards";
+import { DataProductCards } from "@/components/data-product-cards";
 
 import styles from "@/app/landing.module.css";
 
@@ -166,40 +165,6 @@ const safetyPoints = [
 ] as const;
 
 export default function LandingPage() {
-  // The card data follows the 21st.dev demo with only the copy changed. Its
-  // original class names, icons, and offsets stay intact across themes.
-  const dataCards = [
-    {
-      icon: <Sparkles className="size-4 text-blue-300" />,
-      title: "Imports",
-      description: "Import and map contacts",
-      date: "CSV · XLSX · Field mapping",
-      iconClassName: "text-blue-500",
-      titleClassName: "text-blue-500",
-      className:
-        "[grid-area:stack] hover:-translate-y-10 before:absolute before:w-[100%] before:outline-1 before:rounded-xl before:outline-border before:h-[100%] before:content-[''] before:bg-blend-overlay before:bg-background/50 grayscale-[100%] hover:before:opacity-0 before:transition-opacity before:duration-700 hover:grayscale-0 before:left-0 before:top-0"
-    },
-    {
-      icon: <Sparkles className="size-4 text-blue-300" />,
-      title: "Discover",
-      description: "Find relevant work contacts",
-      date: "Company · Role · Location",
-      iconClassName: "text-blue-500",
-      titleClassName: "text-blue-500",
-      className:
-        "[grid-area:stack] translate-x-12 translate-y-10 hover:-translate-y-1 before:absolute before:w-[100%] before:outline-1 before:rounded-xl before:outline-border before:h-[100%] before:content-[''] before:bg-blend-overlay before:bg-background/50 grayscale-[100%] hover:before:opacity-0 before:transition-opacity before:duration-700 hover:grayscale-0 before:left-0 before:top-0"
-    },
-    {
-      icon: <Sparkles className="size-4 text-blue-300" />,
-      title: "Build your list",
-      description: "Review and select contacts",
-      date: "Ready for your next sequence",
-      iconClassName: "text-blue-500",
-      titleClassName: "text-blue-500",
-      className: "[grid-area:stack] translate-x-24 translate-y-20 hover:translate-y-10"
-    }
-  ];
-
   // Anchor contract for the nav and footer. Every in-page link on the public
   // surface resolves to one of these, and they appear in document order so the
   // nav's active-section indicator advances left to right as you scroll:
@@ -310,10 +275,8 @@ export default function LandingPage() {
               ))}
             </div>
           </div>
-          <div className={styles.dataVisual} data-display-cards aria-label="Imports, Discover, and outreach list features">
-            <div className={styles.dataVisualScale}>
-              <DisplayCards cards={dataCards} />
-            </div>
+          <div className={styles.dataVisual}>
+            <DataProductCards />
           </div>
         </div>
       </section>
