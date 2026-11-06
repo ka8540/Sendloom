@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
 import "@/app/globals.css";
+import "@/app/display-cards.css";
 import { CsrfFetchPatch } from "@/components/csrf-fetch-patch";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
 import { ManualProvider } from "@/components/manual/ManualProvider";

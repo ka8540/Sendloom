@@ -1,0 +1,37 @@
+/* Tailwind's theme and utilities are used only for the upstream Display Cards.
+   The preflight reset is deliberately omitted so Sendloom's existing CSS keeps
+   ownership of the rest of the application. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "../components/ui/display-cards.tsx";
+@source "./page.tsx";
+
+@theme {
+  --color-background: #ffffff;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #737373;
+  --color-border: #e5e5e5;
+}
+
+/* Tailwind preflight normally removes paragraph margins. Apply that one reset
+   only inside the demo so the reference card's 144px layout stays exact. */
+[data-display-cards] p {
+  margin: 0;
+}
+
+@keyframes display-cards-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@layer utilities {
+  .animate-in.fade-in-0.duration-700 {
+    animation: display-cards-fade-in 700ms both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @layer utilities {
+    .animate-in.fade-in-0.duration-700 { animation: none; }
+  }
+}

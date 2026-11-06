@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { Fragment, type CSSProperties } from "react";
-import { Check } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import Link from "next/link";
 
 import { BrandText } from "@/components/brand-text";
@@ -12,7 +11,7 @@ import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { LandingProductPreview } from "@/components/landing-product-preview";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
-import { SendloomLogo } from "@/components/sendloom-logo";
+import DisplayCards from "@/components/ui/display-cards";
 
 import styles from "@/app/landing.module.css";
 
@@ -116,11 +115,6 @@ const dataStories = [
   }
 ] as const;
 
-/* Stagger helper for the product visuals: each revealed element carries its
-   transition delay as a custom property so no per-item classes are needed.
-   Scaled down so a freshly activated card finishes revealing quickly. */
-const delay = (seconds: number) => ({ "--d": `${seconds * 0.7}s` }) as CSSProperties;
-
 const sequenceFeatures = [
   {
     title: "Write it once.",
@@ -172,174 +166,38 @@ const safetyPoints = [
 ] as const;
 
 export default function LandingPage() {
-  /* The three product visuals for the Data chapter, in story order. Rendered
-     as static markup; LandingMotion deals them as a deck on desktop. All
-     names and companies are fictional. */
-  const dataVisuals = [
-    <article key="imports" className={styles.dataCard} data-story-card data-reveal aria-label="Imports: mapping a CSV to contact fields">
-      <div className={styles.winBar}>
-        <SendloomLogo className={styles.winMark} />
-        <span className={styles.winTitle}>Imports</span>
-        <span className={styles.winMeta}>your_list.csv</span>
-      </div>
-      <div className={styles.winBody}>
-        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
-          <div>
-            <p className={styles.winScreenTitle}>Map fields</p>
-            <p className={styles.winSub}>Match your file columns to Sendloom.</p>
-          </div>
-          <span className={styles.winCount}>228 contacts</span>
-        </div>
-        <div className={`${styles.winHead} ${styles.rv}`} style={delay(0.14)}>
-          <span>CSV column</span>
-          <span>Sendloom field</span>
-          <span aria-hidden="true" />
-        </div>
-        {[
-          ["first_name", "First Name"],
-          ["last_name", "Last Name"],
-          ["email", "Email"],
-          ["company", "Company"]
-        ].map(([column, field], row) => (
-          <div key={column} className={`${styles.winRow} ${styles.rv}`} style={delay(0.2 + row * 0.06)}>
-            <span className={styles.srcField}>{column}</span>
-            <span className={styles.fieldControl}>
-              {field}
-              <i className={styles.chev} aria-hidden="true" />
-            </span>
-            <span className={styles.rowStatus}>
-              <Check aria-hidden="true" />
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className={styles.winFoot}>
-        <span className={styles.footOk}>
-          <Check aria-hidden="true" />
-          4 of 4 mapped
-        </span>
-        <span className={styles.chipReady}>Ready</span>
-      </div>
-    </article>,
-
-    <article key="discover" className={styles.dataCard} data-story-card data-reveal aria-label="Discover: searching contacts by company, role, and location">
-      <div className={styles.winBar}>
-        <SendloomLogo className={styles.winMark} />
-        <span className={styles.winTitle}>Discover</span>
-        <span className={styles.winMeta}>12 results</span>
-      </div>
-      <div className={styles.winBody}>
-        <div className={`${styles.filterRow} ${styles.rv}`} style={delay(0.05)}>
-          {[
-            ["Company", "Stripe"],
-            ["Role", "Software Engineer"],
-            ["Location", "San Francisco"]
-          ].map(([label, value]) => (
-            <span key={label} className={styles.filterField}>
-              <span className={styles.filterLabel}>{label}</span>
-              {value}
-            </span>
-          ))}
-        </div>
-        <div className={`${styles.winHead} ${styles.headPeople} ${styles.rv}`} style={delay(0.14)}>
-          <span aria-hidden="true" />
-          <span>Person</span>
-          <span>Role</span>
-          <span className={styles.colCompany}>Company</span>
-          <span className={styles.colLocation}>Location</span>
-        </div>
-        {[
-          ["Maya Chen", "Software Engineer", "Stripe", "San Francisco", true],
-          ["Ethan Miller", "Backend Engineer", "Stripe", "New York", false],
-          ["Priya Shah", "Platform Engineer", "Stripe", "Seattle", false]
-        ].map(([name, role, company, location, selected], row) => (
-          <div
-            key={name as string}
-            className={
-              selected
-                ? `${styles.winRow} ${styles.rowPeople} ${styles.winRowSelected} ${styles.rv}`
-                : `${styles.winRow} ${styles.rowPeople} ${styles.rv}`
-            }
-            style={delay(0.2 + row * 0.07)}
-          >
-            <span className={styles.selBox} aria-hidden="true">
-              {selected ? <Check /> : null}
-            </span>
-            <span className={styles.personName}>{name}</span>
-            <span className={styles.cellMuted}>{role}</span>
-            <span className={`${styles.cellMuted} ${styles.colCompany}`}>{company}</span>
-            <span className={`${styles.cellMuted} ${styles.colLocation}`}>{location}</span>
-          </div>
-        ))}
-      </div>
-      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
-        <span>1 selected</span>
-        <span className={styles.footAction}>Add selected to import</span>
-      </div>
-    </article>,
-
-    <article key="outreach-list" className={styles.dataCard} data-story-card data-reveal aria-label="Discover: reviewing people for an outreach list">
-      <div className={styles.winBar}>
-        <SendloomLogo className={styles.winMark} />
-        <span className={styles.winTitle}>Add to outreach</span>
-        <span className={styles.winMeta}>From Discover</span>
-      </div>
-      <div className={styles.winBody}>
-        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
-          <div>
-            <p className={styles.winScreenTitle}>Review contacts</p>
-            <p className={styles.winSub}>Choose who belongs on your list.</p>
-          </div>
-          <span className={styles.winCount}>3 contacts</span>
-        </div>
-        <div className={`${styles.enrichProgress} ${styles.rv}`} style={delay(0.12)}>
-          <span className={styles.enrichTrack} aria-hidden="true">
-            <span className={styles.enrichFill} />
-          </span>
-          <span>2 of 3 selected</span>
-        </div>
-        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.2)}>
-          <span className={styles.avatar} aria-hidden="true">MC</span>
-          <span className={styles.enrichWho}>
-            <span className={styles.personName}>Maya Chen</span>
-            <span className={styles.cellMuted}>Stripe</span>
-          </span>
-          <span className={styles.mailField}>maya@stripe.com</span>
-          <span className={`${styles.statusChip} ${styles.statusFound}`}>Selected</span>
-        </div>
-        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.27)}>
-          <span className={styles.avatar} aria-hidden="true">EM</span>
-          <span className={styles.enrichWho}>
-            <span className={styles.personName}>Ethan Miller</span>
-            <span className={styles.cellMuted}>Linear</span>
-          </span>
-          <span className={styles.swapCell}>
-            <span className={`${styles.mailField} ${styles.mailFieldEmpty} ${styles.swapPending}`}>
-              <i className={styles.searchDot} aria-hidden="true" />
-              Reviewing
-            </span>
-            <span className={`${styles.mailField} ${styles.swapFound}`}>ethan@linear.com</span>
-          </span>
-          <span className={`${styles.swapCell} ${styles.swapStatus}`}>
-            <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Review</span>
-            <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Selected</span>
-          </span>
-        </div>
-        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.34)}>
-          <span className={styles.avatar} aria-hidden="true">PS</span>
-          <span className={styles.enrichWho}>
-            <span className={styles.personName}>Priya Shah</span>
-            <span className={styles.cellMuted}>Figma</span>
-          </span>
-          <span className={styles.mailField}>priya@figma.com</span>
-          <span className={`${styles.statusChip} ${styles.statusSearching}`}>Review</span>
-        </div>
-      </div>
-      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
-        <span>Review inferred work contacts</span>
-        <span className={styles.chipReady}>Add selected</span>
-      </div>
-    </article>
+  // The card data is the 21st.dev demo with only the copy changed. Its original
+  // class names, icons, colors, and offsets stay intact.
+  const dataCards = [
+    {
+      icon: <Sparkles className="size-4 text-blue-300" />,
+      title: "Imports",
+      description: "Import and map contacts",
+      date: "CSV · XLSX · Field mapping",
+      iconClassName: "text-blue-500",
+      titleClassName: "text-blue-500",
+      className:
+        "[grid-area:stack] hover:-translate-y-10 before:absolute before:w-[100%] before:outline-1 before:rounded-xl before:outline-border before:h-[100%] before:content-[''] before:bg-blend-overlay before:bg-background/50 grayscale-[100%] hover:before:opacity-0 before:transition-opacity before:duration-700 hover:grayscale-0 before:left-0 before:top-0"
+    },
+    {
+      icon: <Sparkles className="size-4 text-blue-300" />,
+      title: "Discover",
+      description: "Find relevant work contacts",
+      date: "Company · Role · Location",
+      iconClassName: "text-blue-500",
+      titleClassName: "text-blue-500",
+      className:
+        "[grid-area:stack] translate-x-12 translate-y-10 hover:-translate-y-1 before:absolute before:w-[100%] before:outline-1 before:rounded-xl before:outline-border before:h-[100%] before:content-[''] before:bg-blend-overlay before:bg-background/50 grayscale-[100%] hover:before:opacity-0 before:transition-opacity before:duration-700 hover:grayscale-0 before:left-0 before:top-0"
+    },
+    {
+      icon: <Sparkles className="size-4 text-blue-300" />,
+      title: "Build your list",
+      description: "Review and select contacts",
+      date: "Ready for your next sequence",
+      iconClassName: "text-blue-500",
+      titleClassName: "text-blue-500",
+      className: "[grid-area:stack] translate-x-24 translate-y-20 hover:translate-y-10"
+    }
   ];
 
   // Anchor contract for the nav and footer. Every in-page link on the public
@@ -419,48 +277,43 @@ export default function LandingPage() {
         </ul>
       </section>
 
-      {/* ==================== CHAPTER 01 - DATA ====================
-          Sticky-scroll product story. Left: stable editorial copy with one
-          active story swapping under it. Right: a deck of product visuals
-          dealt through by scroll position. Without JS (or with reduced
-          motion) desktop keeps each story beside its visual, while mobile
-          stacks each pair — see the fallback rules in the stylesheet. */}
+      {/* ==================== CHAPTER 01 - DATA ==================== */}
       <section className={`${styles.chapter} ${styles.dataStory}`} id="why-sendloom" data-story>
         <div className={styles.dataStage}>
-          <header className={styles.dataHead} data-reveal>
-            <p className={styles.chapterLabel}>
-              <span className={styles.chapterIndex}>{chapters.data.index}</span>
-              {chapters.data.label}
-            </p>
-            <h2 className={styles.chapterTitle}>
-              {chapters.data.headline.lead}{" "}
-              <em className={styles.emphasis}>{chapters.data.headline.emphasis}</em>
-            </h2>
-            <p className={styles.chapterIntro}>{chapters.data.intro}</p>
-          </header>
+          <div className={styles.dataCopy}>
+            <header className={styles.dataHead} data-reveal>
+              <p className={styles.chapterLabel}>
+                <span className={styles.chapterIndex}>{chapters.data.index}</span>
+                {chapters.data.label}
+              </p>
+              <h2 className={styles.chapterTitle}>
+                {chapters.data.headline.lead}{" "}
+                <em className={styles.emphasis}>{chapters.data.headline.emphasis}</em>
+              </h2>
+              <p className={styles.chapterIntro}>{chapters.data.intro}</p>
+            </header>
 
-          {/* Copy and visuals interleave so the unenhanced flow reads as
-              story → demo on mobile and story | demo on desktop. The enhanced
-              desktop grid lifts every step into one left-hand cell and every
-              card into the right-hand deck. */}
-          {dataStories.map((story, i) => (
-            <Fragment key={story.title}>
-              <div className={styles.dataStep} data-story-step data-reveal>
+            {dataStories.map((story) => (
+              <div className={styles.dataStep} key={story.index} data-story-step>
                 <p className={styles.dataStepIndex}>{story.index}</p>
                 <h3 className={styles.dataStepTitle}>{story.title}</h3>
                 <p className={styles.dataStepBody}>{story.body}</p>
                 <p className={styles.cellMeta}>{story.meta}</p>
               </div>
-              {dataVisuals[i]}
-            </Fragment>
-          ))}
-
-          <div className={styles.dataProgress} aria-hidden="true">
-            {dataStories.map((story) => (
-              <span key={story.index} className={styles.dataProgSeg}>
-                <span className={styles.dataProgFill} data-story-fill />
-              </span>
             ))}
+
+            <div className={styles.dataProgress} aria-hidden="true">
+              {dataStories.map((story) => (
+                <span key={story.index} className={styles.dataProgSeg}>
+                  <span className={styles.dataProgFill} data-story-fill />
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className={styles.dataVisual} data-display-cards aria-label="Imports, Discover, and outreach list features">
+            <div className={styles.dataVisualScale}>
+              <DisplayCards cards={dataCards} />
+            </div>
           </div>
         </div>
       </section>
