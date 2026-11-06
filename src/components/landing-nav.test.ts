@@ -128,10 +128,12 @@ describe("landing DATA cards", () => {
     expect(cards).toContain("12 results");
     expect(cards).toContain("Review contacts");
     expect(cards.match(/<article key=/g)).toHaveLength(3);
-    expect(cards).toContain("aria-pressed={selected === index}");
+    expect(cards).toContain("aria-pressed={active === index}");
     expect(LANDING_CSS).toContain("--deck-lift-y: -40px");
-    expect(LANDING_CSS).toContain("--deck-lift-y: -4px");
-    expect(LANDING_CSS).toContain("--deck-lift-y: 40px");
+    expect(LANDING_CSS).toContain("--deck-lift-y: -80px");
+    expect(LANDING_CSS).toContain("--deck-lift-y: -120px");
+    expect(LANDING_CSS).not.toContain("skewY(-8deg)");
+    expect(PAGE_SOURCE).toContain("<DataProductCard index={index} />");
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Check } from "lucide-react";
 
 import { SendloomLogo } from "@/components/sendloom-logo";
@@ -10,16 +10,8 @@ const delay = (seconds: number) => ({ "--d": `${seconds * 0.7}s` }) as CSSProper
 
 const cardLabels = ["Imports", "Discover", "Add to outreach"] as const;
 
-export function DataProductCards() {
-  const [selected, setSelected] = useState<number | null>(null);
-  const [activation, setActivation] = useState(0);
-
-  const selectCard = (index: number) => {
-    setSelected(index);
-    setActivation((value) => value + 1);
-  };
-
-  const dataVisuals = [
+function productWindows() {
+  return [
     <article key="imports" className={styles.dataCard} aria-label="Imports: mapping a CSV to contact fields">
       <div className={styles.winBar}>
         <SendloomLogo className={styles.winMark} />
@@ -185,19 +177,56 @@ export function DataProductCards() {
       </div>
     </article>
   ];
+}
+
+export function DataProductCard({ index }: { index: number }) {
+  return <div className={styles.mobileProductCard} data-reveal>{productWindows()[index]}</div>;
+}
+
+export function DataProductCards() {
+  const [active, setActive] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [activation, setActivation] = useState(0);
+
+  useEffect(() => {
+    const story = document.querySelector("[data-story]");
+    const onStoryStep = (event: Event) => {
+      const index = (event as CustomEvent<number>).detail;
+      setActive(index);
+      setSelected(null);
+      setActivation((value) => value + 1);
+    };
+    story?.addEventListener("sendloom:data-step", onStoryStep);
+    return () => story?.removeEventListener("sendloom:data-step", onStoryStep);
+  }, []);
+
+  const selectCard = (index: number) => {
+    setActive(index);
+    setSelected(index);
+    setActivation((value) => value + 1);
+    document.querySelector("[data-story]")?.dispatchEvent(
+      new CustomEvent("sendloom:data-card-select", { detail: index })
+    );
+  };
+
+  const dataVisuals = productWindows();
 
   return (
-    <div className={styles.productDeck} aria-label="Imports, Discover, and Add to outreach previews">
+    <div
+      className={styles.productDeck}
+      aria-label="Imports, Discover, and Add to outreach previews"
+    >
       {dataVisuals.map((visual, index) => (
         <div
           key={cardLabels[index]}
           className={styles.productDeckItem}
           data-product-card={cardLabels[index]}
+          data-active={active === index ? "" : undefined}
           data-selected={selected === index ? "" : undefined}
           role="button"
           tabIndex={0}
           aria-label={`Select ${cardLabels[index]} preview`}
-          aria-pressed={selected === index}
+          aria-pressed={active === index}
           onClick={() => selectCard(index)}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -206,7 +235,7 @@ export function DataProductCards() {
             }
           }}
         >
-          <div className={styles.productDeckInner} key={selected === index ? activation : 0}>
+          <div className={styles.productDeckInner} key={active === index ? activation : 0}>
             {visual}
           </div>
         </div>

@@ -32,7 +32,7 @@ export function LandingMotion() {
 
       gsap.registerPlugin(ScrollTrigger);
 
-      /* Data chapter copy changes with scroll; the 21st.dev cards stay static. */
+      /* Keep the DATA copy and the selected product window in the same step. */
       const story = document.querySelector<HTMLElement>("[data-story]");
       const media = gsap.matchMedia();
       if (story) {
@@ -44,18 +44,29 @@ export function LandingMotion() {
           const count = steps.length;
           let activeIndex = -1;
 
+          const activate = (index: number, fromCard = false) => {
+            if (index === activeIndex) return;
+            activeIndex = index;
+            steps.forEach((step, i) => step.toggleAttribute("data-active", i === index));
+            fills.forEach((fill, i) => fill.parentElement?.toggleAttribute("data-active", i === index));
+            if (!fromCard) {
+              story.dispatchEvent(new CustomEvent("sendloom:data-step", { detail: index }));
+            }
+          };
+
           const apply = (progress: number) => {
             const index = progress < 0.3 ? 0 : progress < 0.67 ? 1 : 2;
-            if (index !== activeIndex) {
-              activeIndex = index;
-              steps.forEach((step, i) => step.toggleAttribute("data-active", i === index));
-              fills.forEach((fill, i) => fill.parentElement?.toggleAttribute("data-active", i === index));
-            }
+            activate(index);
 
             fills.forEach((fill, i) => {
               gsap.set(fill, { scaleX: Math.min(Math.max(progress * count - i, 0), 1) });
             });
           };
+
+          const onCardSelect = (event: Event) => {
+            activate((event as CustomEvent<number>).detail, true);
+          };
+          story.addEventListener("sendloom:data-card-select", onCardSelect);
 
           apply(0);
           ScrollTrigger.create({
@@ -67,6 +78,7 @@ export function LandingMotion() {
           });
 
           return () => {
+            story.removeEventListener("sendloom:data-card-select", onCardSelect);
             story.removeAttribute("data-story");
           };
         });

@@ -394,7 +394,7 @@
   text-wrap: pretty;
 }
 
-/* ---- Chapter 01: editorial copy beside the original Display Cards stack ---- */
+/* ---- Chapter 01: editorial copy beside the product windows ---- */
 
 .dataStage {
   display: grid;
@@ -441,7 +441,7 @@
   line-height: var(--leading-body);
 }
 
-/* Three original Sendloom product windows share the Display Cards stack motion. */
+/* Full product windows stay upright so table text remains readable. */
 .dataVisual {
   display: grid;
   place-items: center;
@@ -453,6 +453,7 @@
 
 .productDeck {
   position: relative;
+  top: 6rem;
   width: min(100%, 41rem);
   height: 28rem;
   isolation: isolate;
@@ -462,60 +463,61 @@
 .productDeckItem {
   position: absolute;
   inset: 0 auto auto 0;
-  width: calc(100% - 6rem);
+  width: calc(100% - 3rem);
   height: 23rem;
   border-radius: 1.5rem;
   cursor: pointer;
   outline: none;
-  transform: translate(var(--deck-x), var(--deck-y)) skewY(-8deg);
+  transform: translate3d(var(--deck-x), var(--deck-y), 0);
   transition:
-    transform 700ms cubic-bezier(0.4, 0, 0.2, 1),
-    filter 700ms cubic-bezier(0.4, 0, 0.2, 1);
+    transform 650ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 450ms ease;
 }
 
 .productDeckItem:nth-child(1) {
-  --deck-x: 0px;
+  --deck-x: 48px;
   --deck-y: 0px;
   --deck-lift-y: -40px;
-  z-index: 1;
-  filter: grayscale(1);
-}
-
-.productDeckItem:nth-child(2) {
-  --deck-x: 48px;
-  --deck-y: 40px;
-  --deck-lift-y: -4px;
-  z-index: 2;
-  filter: grayscale(1);
-}
-
-.productDeckItem:nth-child(3) {
-  --deck-x: 96px;
-  --deck-y: 80px;
-  --deck-lift-y: 40px;
   z-index: 3;
 }
 
-.productDeckItem:nth-child(-n + 2)::before {
+.productDeckItem:nth-child(2) {
+  --deck-x: 24px;
+  --deck-y: -40px;
+  --deck-lift-y: -80px;
+  z-index: 2;
+}
+
+.productDeckItem:nth-child(3) {
+  --deck-x: 0px;
+  --deck-y: -80px;
+  --deck-lift-y: -120px;
+  z-index: 1;
+}
+
+.productDeckItem::before {
   content: "";
   position: absolute;
   z-index: 1;
   inset: 0;
   border-radius: inherit;
   background: var(--surface-strong);
-  opacity: 0.5;
+  opacity: 0.22;
   pointer-events: none;
-  transition: opacity 700ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 450ms ease;
+}
+
+.productDeckItem:is(:hover, :focus-visible, [data-active])::before {
+  opacity: 0;
+}
+
+.productDeckItem[data-active] {
+  z-index: 4;
 }
 
 .productDeckItem:is(:hover, :focus-visible, [data-selected]) {
   z-index: 5;
-  filter: grayscale(0);
-  transform: translate(var(--deck-x), var(--deck-lift-y)) skewY(-8deg);
-}
-
-.productDeckItem:is(:hover, :focus-visible, [data-selected])::before {
-  opacity: 0;
+  transform: translate3d(var(--deck-x), var(--deck-lift-y), 0);
 }
 
 .productDeckItem:focus-visible .dataCard {
@@ -534,12 +536,37 @@
   to { opacity: 1; }
 }
 
-@media (max-width: 640px) {
-  .dataVisual { min-height: 43rem; }
-  .productDeck { height: 43rem; }
-  .productDeckItem { width: calc(100% - 2rem); height: 30rem; }
-  .productDeckItem:nth-child(2) { --deck-x: 16px; --deck-y: 64px; --deck-lift-y: 24px; }
-  .productDeckItem:nth-child(3) { --deck-x: 32px; --deck-y: 160px; --deck-lift-y: 120px; }
+.dataMobileStories {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .dataCopy > .dataStep,
+  .dataVisual {
+    display: none;
+  }
+
+  .dataMobileStories,
+  .dataMobileStory {
+    display: grid;
+  }
+
+  .dataMobileStories {
+    gap: clamp(3rem, 8vw, 4.5rem);
+  }
+
+  .dataMobileStory {
+    gap: var(--space-5);
+  }
+
+  .mobileProductCard {
+    min-width: 0;
+  }
+
+  .mobileProductCard .dataCard {
+    width: 100%;
+    min-height: 21rem;
+  }
 }
 
 /* Enhanced-only progress rail; hidden in the stacked layout. */
@@ -1030,26 +1057,26 @@
   }
 }
 
-/* Selecting a product card replays the row cascade and the contact review.
-   The stack's lift and grayscale timing remain the original 700ms motion. */
+/* Activating a product card replays the row cascade and contact review.
+   Selection lifts the upright window by 40px. */
 .rv {
   opacity: 1;
 }
 
-.productDeckItem[data-selected] .rv {
+.productDeckItem[data-active] .rv {
   animation: productRowIn 500ms ease both;
   animation-delay: var(--d, 0s);
 }
 
-.productDeckItem[data-selected] .enrichFill {
+.productDeckItem[data-active] .enrichFill {
   animation: productProgressIn 850ms ease both;
 }
 
-.productDeckItem[data-selected] .swapPending {
+.productDeckItem[data-active] .swapPending {
   animation: productReviewPending 1.25s ease 250ms both;
 }
 
-.productDeckItem[data-selected] .swapFound {
+.productDeckItem[data-active] .swapFound {
   animation: productReviewFound 1.25s ease 250ms both;
 }
 
@@ -1076,10 +1103,10 @@
 @media (prefers-reduced-motion: reduce) {
   .productDeck { animation: none; }
   .productDeckItem, .productDeckItem::before { transition: none; }
-  .productDeckItem[data-selected] .rv,
-  .productDeckItem[data-selected] .enrichFill,
-  .productDeckItem[data-selected] .swapPending,
-  .productDeckItem[data-selected] .swapFound { animation: none; }
+  .productDeckItem[data-active] .rv,
+  .productDeckItem[data-active] .enrichFill,
+  .productDeckItem[data-active] .swapPending,
+  .productDeckItem[data-active] .swapFound { animation: none; }
 }
 
 /* ---- Enhanced desktop DATA story ----

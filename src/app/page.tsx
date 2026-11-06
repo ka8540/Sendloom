@@ -10,7 +10,7 @@ import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { LandingProductPreview } from "@/components/landing-product-preview";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
-import { DataProductCards } from "@/components/data-product-cards";
+import { DataProductCard, DataProductCards } from "@/components/data-product-cards";
 
 import styles from "@/app/landing.module.css";
 
@@ -277,6 +277,19 @@ export default function LandingPage() {
           </div>
           <div className={styles.dataVisual}>
             <DataProductCards />
+          </div>
+          <div className={styles.dataMobileStories}>
+            {dataStories.map((story, index) => (
+              <div className={styles.dataMobileStory} key={story.index}>
+                <div className={styles.dataStep} data-reveal>
+                  <p className={styles.dataStepIndex}>{story.index}</p>
+                  <h3 className={styles.dataStepTitle}>{story.title}</h3>
+                  <p className={styles.dataStepBody}>{story.body}</p>
+                  <p className={styles.cellMeta}>{story.meta}</p>
+                </div>
+                <DataProductCard index={index} />
+              </div>
+            ))}
           </div>
         </div>
       </section>
