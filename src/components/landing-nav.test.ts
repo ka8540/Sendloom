@@ -120,13 +120,15 @@ describe("landing integration marks", () => {
   });
 });
 
-describe("landing DATA cards", () => {
-  it("renders one three-card stack with the reference demo offsets", () => {
-    expect(PAGE_SOURCE.match(/<DisplayCards cards={dataCards}/g)).toHaveLength(1);
-    expect(PAGE_SOURCE).toContain("translate-x-12 translate-y-10");
-    expect(PAGE_SOURCE).toContain("translate-x-24 translate-y-20");
-    expect(PAGE_SOURCE.match(/<Sparkles className="size-4 text-blue-300" \/>/g)).toHaveLength(3);
-    expect(PAGE_SOURCE).not.toContain("data-story-card");
+describe("landing Imports window", () => {
+  const importsStart = PAGE_SOURCE.indexOf('<article key="imports"');
+  const discoverStart = PAGE_SOURCE.indexOf('<article key="discover"');
+  const importsWindow = PAGE_SOURCE.slice(importsStart, discoverStart);
+
+  it("keeps the compact four-row mapping preview clear of its footer", () => {
+    expect(importsWindow).toContain('["company", "Company"]');
+    expect(importsWindow).not.toContain('["location", "Location"]');
+    expect(importsWindow).toContain("4 of 4 mapped");
   });
 });
 
@@ -136,10 +138,10 @@ describe("landing production fallback", () => {
     expect(NEXT_CONFIG).not.toContain("unsafe-eval");
   });
 
-  it("keeps story copy and the stack visible without the animated state", () => {
-    expect(LANDING_CSS).toContain(".dataVisual");
-    expect(LANDING_CSS).toContain(".dataCopy");
-    expect(LANDING_CSS).toContain('.dataStory[data-story="enhanced"] .dataStep');
-    expect(LANDING_CSS).not.toContain(".dataCard");
+  it("pairs story copy and demos on desktop when the animated deck is unavailable", () => {
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataStage');
+    expect(LANDING_CSS).toMatch(/dataStory:not\(\[data-story="enhanced"\]\) \.dataStage[\s\S]{0,240}grid-template-columns/);
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataStep');
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataCard');
   });
 });

@@ -1364,7 +1364,7 @@ Useful scripts:
 | Script | Command | Purpose |
 | --- | --- | --- |
 | Dev server | `npm run dev` | Start Next.js dev server. |
-| Build | `npm run build` | Runs `prisma migrate deploy`, `prisma generate`, and `next build`. |
+| Build | `npm run build` | Runs `prisma migrate deploy` outside Vercel Preview, then `prisma generate` and `next build`. |
 | Start | `npm run start` | Start production Next.js server. |
 | Prisma generate | `npm run prisma:generate` | Generate Prisma client. |
 | Prisma migrate | `npm run prisma:migrate` | Run development migrations. |
@@ -1380,14 +1380,14 @@ Development notes:
 - Local uploads default to `./uploads`.
 - Copy `.env.example` to `.env` and fill it in. Never commit `.env` files or real secrets.
 
-> **Warning:** `npm run build` runs `prisma migrate deploy` before compiling, so it applies migrations to whatever `DATABASE_URL` points at. Use `npx next build` when you only want to verify that the app compiles.
+> **Warning:** Outside Vercel Preview, `npm run build` runs `prisma migrate deploy` before compiling, so it applies migrations to whatever `DATABASE_URL` points at. Vercel Preview skips migrations. Use `npx next build` when you only want to verify that the app compiles locally.
 
 ## 19. Deployment Notes
 
 Hosting assumptions:
 
 - The codebase is compatible with Vercel-style serverless deployment and long-running Node deployment patterns.
-- `npm run build` deploys migrations before build through `prisma migrate deploy`.
+- `npm run build` deploys migrations before build through `prisma migrate deploy` outside Vercel Preview. Preview builds skip the migration step.
 - No `vercel.json` is present in the current repository, so cron scheduling must be configured in the host dashboard or with an external cron service.
 
 Deployment order:

@@ -896,7 +896,7 @@ npm test
 npm run typecheck
 ```
 
-> `npm run build` runs `prisma migrate deploy` first, so it mutates the database pointed at by `DATABASE_URL`. Use `npx next build` when you only want to compile.
+> `npm run build` runs `prisma migrate deploy` before compiling except in Vercel Preview (`VERCEL_ENV=preview`), where it only generates Prisma Client and builds Next.js. Use `npx next build` when you only want to compile locally.
 
 ### Notes
 

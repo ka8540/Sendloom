@@ -1,9 +1,3 @@
-import { clsx, type ClassValue } from "clsx";
-
-export function cn(...inputs: ClassValue[]) {
-  return clsx(inputs);
-}
-
 export function normalizeHeader(value: string) {
   return value.trim().replace(/\s+/g, "_").toLowerCase();
 }
